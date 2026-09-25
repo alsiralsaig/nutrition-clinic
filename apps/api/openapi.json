@@ -1,0 +1,219 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Nutrition Clinic API",
+    "version": "1.0.0",
+    "description": "واجهة REST لنظام إدارة عيادة التغذية. مصمَّمة ليستهلكها موقع الويب وتطبيق الموبايل (Android/iOS) الخاص بالمريض دون أي تعديل. المصادقة: POST /api/auth/login ثم إرسال `Authorization: Bearer <token>` في كل طلب. التوكن صالح 12 ساعة.",
+    "contact": { "name": "Clinic IT" }
+  },
+  "servers": [{ "url": "http://localhost:4000", "description": "تطوير محلي" }, { "url": "https://api.clinic.example", "description": "الإنتاج" }],
+  "security": [{ "bearerAuth": [] }],
+  "tags": [
+    { "name": "auth", "description": "الدخول والحسابات" },
+    { "name": "patients", "description": "إدارة المرضى والملف الشامل" },
+    { "name": "measurements", "description": "المتابعة والقياسات والزورات" },
+    { "name": "plans", "description": "البرامج الغذائية" },
+    { "name": "appointments", "description": "المواعيد" },
+    { "name": "payments", "description": "المدفوعات والإيرادات" },
+    { "name": "dashboard", "description": "مؤشرات لوحة التحكم" },
+    { "name": "reports", "description": "التقارير والتصدير" },
+    { "name": "system", "description": "الإعدادات والنسخ الاحتياطي والصحة" }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": { "tags": ["system"], "summary": "فحص الحياة (بدون توكن)", "security": [], "responses": { "200": { "description": "OK" } } }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": ["auth"], "summary": "تسجيل الدخول", "security": [],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["username", "password"], "properties": { "username": { "type": "string" }, "password": { "type": "string" } } } } } },
+        "responses": { "200": { "description": "{ token, token_type, expires_in, user }" }, "400": { "description": "بيانات دخول خاطئة" }, "409": { "description": "حساب موقوف" } }
+      }
+    },
+    "/api/auth/me": { "get": { "tags": ["auth"], "summary": "المستخدم الحالي", "responses": { "200": { "description": "{ user: {id, username, full_name, role, active} }" } } } },
+    "/api/auth/change-password": { "post": { "tags": ["auth"], "summary": "تغيير كلمة المرور", "responses": { "200": { "description": "ok" } } } },
+    "/api/auth/users": {
+      "get": { "tags": ["auth"], "summary": "قائمة المستخدمين (admin)", "responses": { "200": { "description": "{ items }" } } },
+      "post": { "tags": ["auth"], "summary": "إنشاء مستخدم (admin)", "responses": { "201": { "description": "user" } } }
+    },
+    "/api/patients": {
+      "get": {
+        "tags": ["patients"], "summary": "قائمة + بحث سريع",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "اسم أو رقم ملف أو هاتف" },
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "inactive", "archived"] } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } },
+          { "name": "sort", "in": "query", "schema": { "type": "string", "enum": ["file_no", "name", "created"] } }
+        ],
+        "responses": { "200": { "description": "{ total, items: Patient[] }" } }
+      },
+      "post": { "tags": ["patients"], "summary": "إنشاء مريض (رقم الملف تلقائي)", "responses": { "201": { "description": "Patient" }, "400": { "description": "تحقق المدخلات" } } }
+    },
+    "/api/patients/{id}": {
+      "get": { "tags": ["patients"], "summary": "مريض واحد", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "Patient" }, "404": { "description": "غير موجود" } } },
+      "put": { "tags": ["patients"], "summary": "تحديث جزئي أو كامل", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "Patient" } } },
+      "delete": { "tags": ["patients"], "summary": "حذف (admin) أو أرشفة لغير المدير", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "{ deleted | archived }" }, "403": { "description": "صلاحية" } } }
+    },
+    "/api/patients/{id}/profile": {
+      "get": { "tags": ["patients"], "summary": "ملف المريض الشامل في طلب واحد (بيانات، زيارات، قياسات، خطة، مواعيد، مدفوعات، إحصاءات)", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "PatientProfile" } } }
+    },
+    "/api/patients/{id}/warnings": { "get": { "tags": ["patients"], "summary": "عدد السجلات المرتبطة قبل الحذف", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "counts" } } } },
+    "/api/visits": {
+      "get": { "tags": ["measurements"], "summary": "زيارات مريض", "parameters": [{ "name": "patient_id", "in": "query", "schema": { "type": "integer" } }], "responses": { "200": { "description": "{ items }" } } },
+      "post": { "tags": ["measurements"], "summary": "تسجيل زيارة", "responses": { "201": { "description": "Visit" } } }
+    },
+    "/api/measurements": {
+      "get": { "tags": ["measurements"], "summary": "القياسات (وزن، طول، BMI، خصر، صدر، ورك، دهون)", "parameters": [{ "name": "patient_id", "in": "query", "schema": { "type": "integer" } }], "responses": { "200": { "description": "{ items: Measurement[] }" } } },
+      "post": { "tags": ["measurements"], "summary": "تسجيل قياسات زيارة — BMI و WHR يُحسبان في السيرفر", "responses": { "201": { "description": "Measurement" } } }
+    },
+    "/api/measurements/{id}": {
+      "put": { "tags": ["measurements"], "summary": "تعديل قياسات", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "Measurement" } } },
+      "delete": { "tags": ["measurements"], "summary": "حذف قياسات", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "ok" } } }
+    },
+    "/api/diet-plans": {
+      "get": { "tags": ["plans"], "summary": "البرامج الغذائية", "parameters": [{ "name": "patient_id", "in": "query", "schema": { "type": "integer" } }], "responses": { "200": { "description": "{ items }" } } },
+      "post": { "tags": ["plans"], "summary": "إنشاء برنامج مع الوجبات (المجاميع تُحسب آلياً)", "responses": { "201": { "description": "DietPlan" } } }
+    },
+    "/api/diet-plans/{id}": {
+      "get": { "tags": ["plans"], "summary": "برنامج مع وجباته ومجاميعه", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "DietPlan" } } },
+      "put": { "tags": ["plans"], "summary": "تعديل البرنامج والوجبات", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "DietPlan" } } },
+      "delete": { "tags": ["plans"], "summary": "حذف البرنامج", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "ok" } } }
+    },
+    "/api/diet-plans/{id}/activate": { "post": { "tags": ["plans"], "summary": "اعتماد البرنامج كحالي (يؤرشف النشط سابقاً)", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "DietPlan" } } } },
+    "/api/diet-plans/{id}/duplicate": { "post": { "tags": ["plans"], "summary": "نسخ برنامج لمريض آخر", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "201": { "description": "DietPlan" } } } },
+    "/api/diet-plans/meal-template": { "get": { "tags": ["plans"], "summary": "قالب وجبات جاهز", "security": [{ "bearerAuth": [] }], "responses": { "200": { "description": "{ items }" } } } },
+    "/api/diet-plans/foods/lookup": { "tags": ["plans"], "get": { "summary": "بحث في جدول الأغذية للسعرات", "parameters": [{ "name": "q", "in": "query", "schema": { "type": "string" } }], "responses": { "200": { "description": "{ items }" } } } },
+    "/api/appointments": {
+      "get": { "tags": ["appointments"], "summary": "قائمة مواعيد مع فلاتر", "parameters": [
+        { "name": "patient_id", "in": "query", "schema": { "type": "integer" } },
+        { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+        { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+        { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["scheduled", "confirmed", "done", "cancelled", "no_show"] } }
+      ], "responses": { "200": { "description": "{ items }" } } },
+      "post": { "tags": ["appointments"], "summary": "تسجيل موعد (يرفض التداخل 409)", "responses": { "201": { "description": "Appointment" }, "409": { "description": "الوقت محجوز" } } }
+    },
+    "/api/appointments/today": { "get": { "tags": ["appointments"], "summary": "مواعيد اليوم + ملخص", "parameters": [{ "name": "date", "in": "query", "schema": { "type": "string", "format": "date" } }], "responses": { "200": { "description": "TodaySchedule" } } } },
+    "/api/appointments/upcoming": { "get": { "tags": ["appointments"], "summary": "أقرب 30 موعداً قادماً", "responses": { "200": { "description": "{ items }" } } } },
+    "/api/appointments/{id}/status": { "post": { "tags": ["appointments"], "summary": "تغيير الحالة (done ينشئ زيارة تلقائياً)", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "Appointment" } } } },
+    "/api/payments": {
+      "get": { "tags": ["payments"], "summary": "المدفوعات مع الإجمالي", "parameters": [
+        { "name": "patient_id", "in": "query", "schema": { "type": "integer" } },
+        { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+        { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+      ], "responses": { "200": { "description": "{ items, total, currency }" } } },
+      "post": { "tags": ["payments"], "summary": "تسجيل دفعة", "responses": { "201": { "description": "Payment" } } }
+    },
+    "/api/payments/summary": { "get": { "tags": ["payments"], "summary": "الإيرادات شهرياً/حسب الخدمة/حسب الطريقة", "parameters": [{ "name": "months", "in": "query", "schema": { "type": "integer", "default": 12 } }], "responses": { "200": { "description": "RevenueSummary" } } } },
+    "/api/payments/{id}/void": { "post": { "tags": ["payments"], "summary": "إلغاء دفعة (بدل الحذف)", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "Payment" } } } },
+    "/api/dashboard/summary": { "get": { "tags": ["dashboard"], "summary": "بطاقات اللوحة: المرضى، النشطون، مواعيد اليوم، الإيرادات، المتابعة", "responses": { "200": { "description": "DashboardSummary" } } } },
+    "/api/dashboard/charts": { "get": { "tags": ["dashboard"], "summary": "بيانات الرسوم البيانية", "parameters": [{ "name": "months", "in": "query", "schema": { "type": "integer", "default": 12 } }], "responses": { "200": { "description": "ChartData" } } } },
+    "/api/dashboard/today": { "get": { "tags": ["dashboard"], "summary": "جدول اليوم المختصر", "responses": { "200": { "description": "TodaySchedule" } } } },
+    "/api/reports/patient/{id}": { "get": { "tags": ["reports"], "summary": "تقرير كامل للمريض (للطباعة/PDF)", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "PatientReport" } } } },
+    "/api/reports/weight-progress/{id}": { "get": { "tags": ["reports"], "summary": "تقرير تطور الوزن والقياسات", "parameters": [{ "$ref": "#/components/parameters/id" }], "responses": { "200": { "description": "WeightProgressReport" } } } },
+    "/api/reports/visits": { "get": { "tags": ["reports"], "summary": "تقرير الزيارات في فترة", "responses": { "200": { "description": "VisitsReport" } } } },
+    "/api/reports/revenue": { "get": { "tags": ["reports"], "summary": "تقرير الإيرادات في فترة", "responses": { "200": { "description": "RevenueReport" } } } },
+    "/api/reports/audit": { "get": { "tags": ["reports"], "summary": "سجل من عدّل ماذا ومتى", "responses": { "200": { "description": "{ items }" } } } },
+    "/api/reports/export/{kind}": { "get": { "tags": ["reports"], "summary": "تصدير CSV (patients|measurements|payments|appointments)", "parameters": [{ "name": "kind", "in": "path", "required": true, "schema": { "type": "string" } }], "responses": { "200": { "description": "text/csv مع BOM يدعم العربية في Excel" } } } },
+    "/api/settings": {
+      "get": { "tags": ["system"], "summary": "إعدادات العيادة", "responses": { "200": { "description": "{ settings }" } } },
+      "put": { "tags": ["system"], "summary": "تحديث الإعدادات (admin)", "responses": { "200": { "description": "{ settings }" } } }
+    },
+    "/api/backup": { "get": { "tags": ["system"], "summary": "نسخة احتياطية JSON لكل الجداول (admin)", "responses": { "200": { "description": "BackupBundle" } } } },
+    "/api/backup/file": { "get": { "tags": ["system"], "summary": "تنزيل ملف قاعدة البيانات الخام", "responses": { "200": { "description": "application/octet-stream" } } } },
+    "/api/restore": { "post": { "tags": ["system"], "summary": "استعادة من نسخة JSON (ينسخ الأمان تلقائياً)", "responses": { "200": { "description": "{ restored }" } } } },
+    "/api/maintenance/vacuum": { "post": { "tags": ["system"], "summary": "VACUUM + integrity_check", "responses": { "200": { "description": "{ ok, integrity }" } } } }
+  },
+  "components": {
+    "securitySchemes": { "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" } },
+    "parameters": { "id": { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } } },
+    "schemas": {
+      "Patient": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "file_no": { "type": "string", "example": "NC-0007" },
+          "first_name": { "type": "string" }, "last_name": { "type": "string" }, "full_name": { "type": "string" },
+          "phone": { "type": "string" }, "birth_date": { "type": "string", "format": "date" }, "age": { "type": "integer" },
+          "gender": { "type": "string", "enum": ["male", "female"] },
+          "height_cm": { "type": "number" }, "start_weight": { "type": "number" }, "goal_weight": { "type": "number" },
+          "start_bmi": { "type": "number" }, "start_bmi_category": { "type": "string" },
+          "ideal_weight": { "type": "number" }, "to_lose": { "type": "number" },
+          "goal": { "type": "string" }, "notes": { "type": "string" },
+          "status": { "type": "string", "enum": ["active", "inactive", "archived"] },
+          "last_visit": { "type": "string", "format": "date" }, "last_weight": { "type": "number" }, "last_bmi": { "type": "number" },
+          "paid_total": { "type": "number" }, "upcoming_count": { "type": "integer" }
+        }
+      },
+      "Measurement": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" }, "patient_id": { "type": "integer" }, "visit_id": { "type": "integer" },
+          "measured_on": { "type": "string", "format": "date" },
+          "weight_kg": { "type": "number" }, "height_cm": { "type": "number" },
+          "bmi": { "type": "number", "readOnly": true, "description": "محسوب من السيرفر — أي قيمة يرسلها العميل تُتجاهل" },
+          "bmi_category": { "type": "string", "readOnly": true },
+          "waist_cm": { "type": "number" }, "chest_cm": { "type": "number" }, "hip_cm": { "type": "number" },
+          "waist_hip_ratio": { "type": "number", "readOnly": true }, "body_fat_pct": { "type": "number" }, "notes": { "type": "string" }
+        }
+      },
+      "DietPlan": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" }, "patient_id": { "type": "integer" }, "title": { "type": "string" },
+          "start_date": { "type": "string", "format": "date" }, "end_date": { "type": "string", "format": "date" },
+          "target_kcal": { "type": "number" }, "target_protein_g": { "type": "number" }, "target_carbs_g": { "type": "number" }, "target_fat_g": { "type": "number" },
+          "advice": { "type": "string" }, "status": { "type": "string", "enum": ["draft", "active", "archived"] },
+          "meals": { "type": "array", "items": { "$ref": "#/components/schemas/DietMeal" } },
+          "totals": { "type": "object", "readOnly": true, "properties": { "kcal": { "type": "number" }, "protein_g": { "type": "number" }, "carbs_g": { "type": "number" }, "fat_g": { "type": "number" } } }
+        }
+      },
+      "DietMeal": {
+        "type": "object",
+        "required": ["slot"],
+        "properties": {
+          "slot": { "type": "string", "example": "الغداء" }, "slot_time": { "type": "string", "example": "14:00" },
+          "title": { "type": "string" }, "items": { "type": "string" }, "portions": { "type": "string" },
+          "kcal": { "type": "number" }, "protein_g": { "type": "number" }, "carbs_g": { "type": "number" }, "fat_g": { "type": "number" }, "position": { "type": "integer" }
+        }
+      },
+      "Appointment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" }, "patient_id": { "type": "integer" }, "patient_name": { "type": "string" },
+          "date": { "type": "string", "format": "date" }, "time": { "type": "string" }, "duration_min": { "type": "integer" },
+          "visit_type": { "type": "string", "enum": ["initial", "followup", "consult", "plan_update", "lab_review"] },
+          "status": { "type": "string", "enum": ["scheduled", "confirmed", "done", "cancelled", "no_show"] },
+          "notes": { "type": "string" }
+        }
+      },
+      "Payment": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" }, "patient_id": { "type": "integer" }, "patient_name": { "type": "string" },
+          "paid_on": { "type": "string", "format": "date" }, "service": { "type": "string" }, "amount": { "type": "number" },
+          "currency": { "type": "string", "example": "SDG" },
+          "method": { "type": "string", "enum": ["cash", "card", "bank_transfer", "mobile_wallet", "instalment"] },
+          "invoice_no": { "type": "string" }, "voided": { "type": "integer" }
+        }
+      },
+      "PatientProfile": {
+        "type": "object",
+        "description": "كل ما يحتاجه ملف المريض في صفحة واحدة — نقطة الدخول الموصى بها لتطبيق الموبايل.",
+        "properties": {
+          "patient": { "$ref": "#/components/schemas/Patient" },
+          "visits": { "type": "array", "items": { "type": "object" } },
+          "measurements": { "type": "array", "items": { "$ref": "#/components/schemas/Measurement" } },
+          "weight_series": { "type": "array", "items": { "type": "object", "properties": { "date": { "type": "string" }, "weight_kg": { "type": "number" }, "delta_vs_prev": { "type": "number" }, "delta_vs_start": { "type": "number" } } } },
+          "plans": { "type": "array", "items": { "$ref": "#/components/schemas/DietPlan" } },
+          "active_plan": { "$ref": "#/components/schemas/DietPlan" },
+          "appointments": { "type": "array", "items": { "$ref": "#/components/schemas/Appointment" } },
+          "next_appointment": { "$ref": "#/components/schemas/Appointment" },
+          "payments": { "type": "array", "items": { "$ref": "#/components/schemas/Payment" } },
+          "financials": { "type": "object" },
+          "stats": { "type": "object" }
+        }
+      }
+    }
+  }
+}

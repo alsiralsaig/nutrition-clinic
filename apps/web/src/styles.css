@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root { color-scheme: light; }
+  * { -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    @apply bg-sand text-ink font-sans antialiased;
+    font-feature-settings: "ss01";
+  }
+  /* أرقام لاتينية أوضح في الجداول الطبية */
+  .tnum { font-variant-numeric: tabular-nums; }
+  h1, h2, h3 { @apply font-bold tracking-tight; }
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { @apply bg-brand-200/70 rounded-full border-2 border-solid border-transparent bg-clip-padding; }
+  ::-webkit-scrollbar-thumb:hover { @apply bg-brand-300; }
+  ::-webkit-scrollbar-track { @apply bg-transparent; }
+  input, select, textarea { @apply outline-none; }
+  input[type="date"], input[type="time"] { @apply text-start; }
+  /* إزالة أسهم الأرقام لتبدو الحقول أنظف */
+  input[type="number"]::-webkit-outer-spin-button,
+  input[type="number"]::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  input[type="number"] { -moz-appearance: textfield; }
+}
+
+@layer components {
+  .card { @apply rounded-xl2 border border-line bg-white shadow-card; }
+  .card-pad { @apply p-4 sm:p-5; }
+  .section-title { @apply flex items-center gap-2 text-[15px] font-bold text-ink; }
+  .muted { @apply text-[13px] leading-5 text-ink/55; }
+  .label { @apply mb-1.5 block text-[12.5px] font-semibold text-ink/70; }
+  .field {
+    @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-ink shadow-inner
+      placeholder:text-ink/35 transition
+      focus:border-brand-400 focus:ring-4 focus:ring-brand-100
+      disabled:bg-sand disabled:text-ink/50 read-only:bg-sand read-only:text-ink/60;
+  }
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-[13.5px] font-bold
+      transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary { @apply btn bg-brand-700 text-white shadow-sm hover:bg-brand-800 focus:ring-4 focus:ring-brand-100; }
+  .btn-ghost { @apply btn border border-line bg-white text-ink/80 hover:border-brand-300 hover:text-brand-700; }
+  .btn-soft { @apply btn bg-brand-50 text-brand-700 hover:bg-brand-100; }
+  .btn-danger { @apply btn bg-clay-50 text-clay-600 hover:bg-clay-100; }
+  .btn-sm { @apply px-3 py-1.5 text-[12.5px]; }
+  .chip { @apply inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-[11.5px] font-bold; }
+  .table { @apply w-full border-collapse text-[13.5px]; }
+  .table thead th {
+    @apply sticky top-0 z-10 border-b border-line bg-sand/95 px-3 py-2.5 text-start text-[12px] font-bold text-ink/60 backdrop-blur;
+    white-space: nowrap;
+  }
+  .table tbody td { @apply border-b border-line/70 px-3 py-2.5 align-middle; }
+  .table tbody tr { @apply transition hover:bg-brand-50/60; }
+  .table tbody tr.clickable { @apply cursor-pointer; }
+  .row-actions { @apply opacity-0 transition group-hover:opacity-100 focus-within:opacity-100; }
+  .kpi-num { @apply tnum text-[26px] font-extrabold leading-none text-ink; }
+  .divide-line { @apply divide-y divide-line; }
+  .hairline { @apply border-line; }
+  .tab {
+    @apply relative rounded-lg px-3.5 py-2 text-[13px] font-bold text-ink/55 transition hover:text-brand-700;
+  }
+  .tab-active { @apply bg-white text-brand-700 shadow-card; }
+  .navlink {
+    @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-bold text-ink/65 transition
+      hover:bg-white/70 hover:text-brand-800;
+  }
+  .navlink-active { @apply bg-white text-brand-800 shadow-card; }
+  .print-doc { @apply text-[12.5px] leading-relaxed text-black; }
+}
+
+@layer utilities {
+  .fade-in { animation: fade .22s ease-out; }
+  .pop-in { animation: pop .18s cubic-bezier(.2,.9,.3,1.2); }
+  @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes pop { from { opacity: 0; transform: translateY(6px) scale(.985) } to { opacity: 1; transform: none } }
+  .scroll-x { @apply overflow-x-auto; overscroll-behavior-x: contain; }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+}
+
+/* ============================ الطباعة و PDF ============================ */
+@page { size: A4; margin: 13mm 12mm; }
+
+@media print {
+  html, body { background: #fff !important; }
+  body { font-size: 12px; }
+  .no-print, .no-print * { display: none !important; }
+  .print-plain { box-shadow: none !important; border: 0 !important; background: #fff !important; }
+  .print-doc a { text-decoration: none; color: inherit; }
+  .print-doc table { width: 100%; border-collapse: collapse; }
+  .print-doc th, .print-doc td { border: 1px solid #d8d4cc; padding: 5px 7px; font-size: 11.5px; }
+  .print-doc thead { display: table-header-group; } /* تكرار رؤوس الأعمدة */
+  .print-doc tr, .print-doc .keep { break-inside: avoid; page-break-inside: avoid; }
+  .print-doc .page-break { break-after: page; }
+  /* الطباعة من معاينة داخلي: نُخفي التطبيق كاملاً ونُطبع الورقة وحدها */
+  body.printing > #root { display: none !important; }
+  body.printing .print-portal {
+    position: static !important; inset: auto !important; overflow: visible !important;
+    background: #fff !important; padding: 0 !important; backdrop-filter: none !important;
+  }
+}

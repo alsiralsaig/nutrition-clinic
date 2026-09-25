@@ -1,0 +1,15 @@
+node_modules/
+dist/
+build/
+.data/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+.env
+.env.local
+.DS_Store
+npm-debug.log*
+coverage/
+.webpack/
+apps/api/.jwt-secret

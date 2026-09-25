@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm install --no-audit --no-fund
+
+      - name: Build web
+        run: npm run build
+
+      - name: API smoke tests (85 checks)
+        run: npm run test:api
+
+      - name: API serves the built UI on one port
+        run: |
+          node apps/api/src/server.js &
+          sleep 3
+          curl -fsS localhost:4000/api/health | grep -q '"ok":true'
+          curl -fsS localhost:4000/ | grep -q 'dir="rtl"'
+          curl -fsS localhost:4000/openapi.json | grep -q '"openapi"'
