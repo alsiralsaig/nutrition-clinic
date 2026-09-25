@@ -155,6 +155,22 @@ if (onFile) {
   }
 }
 
+// ---------- 6ب) إلغاء دفعة من الملف (سلك المسار الصحيح في الواجهة) ----------
+let voided = false;
+for (const pid of [1, 2, 3, 4, 5, 6, 7, 8]) {
+  await goto(`#/patients/${pid}`, 900);
+  const btn = q('[title="إلغاء الدفعة"]');   // أزرار الصفوف بلا نص — لها title فقط
+  if (!btn) continue;
+  await click(btn, 500);
+  const okBtn = qa('.pop-in button').find((b) => (b.textContent || '').trim() === 'إلغاء الدفعة');
+  check(`يفتح تأكيد إلغاء الدفعة في ملف ${pid}`, !!okBtn);
+  await click(okBtn, 1500);
+  voided = text().includes('تم إلغاء الدفعة');
+  check('إلغاء دفعة ينجح من الواجهة (مسار /payments/{id}/void)', voided, text().slice(-140));
+  break;
+}
+if (!voided) check('لم يُعثر على دفعة غير ملغاة في المرضى الثمانية الأولى', false, 'البيانات التجريبية بلا مدفوعات؟');
+
 // ---------- 7) المواعيد ----------
 await goto('#/appointments', 1200);
 check('صفحة المواعيد تعرض جدول اليوم', text().includes('جدول اليوم') || text().includes('مواعيد اليوم') || text().includes('لا مواعيد في هذا اليوم'));

@@ -406,7 +406,7 @@ export default function PatientFile() {
                     {canWrite && !x.voided && (
                       <div className="flex gap-1">
                         <button className="btn-ghost btn-sm !px-2" title="تعديل" onClick={() => { setEditing(x); setModal('payment'); }}><Icon.pencil /></button>
-                        <button className="btn-danger btn-sm !px-2" title="إلغاء الدفعة" onClick={() => setConfirm({ kind: 'payments/void', id: x.id, text: 'إلغاء هذه الدفعة؟ ستُستثنى من الإيرادات مع بقاء الأثر في السجل.', action: 'post' })}><Icon.close /></button>
+                        <button className="btn-danger btn-sm !px-2" title="إلغاء الدفعة" onClick={() => setConfirm({ kind: 'payments', id: x.id, text: 'إلغاء هذه الدفعة؟ ستُستثنى من الإيرادات مع بقاء الأثر في السجل.', action: 'void' })}><Icon.close /></button>
                       </div>
                     )}
                   </td>
@@ -432,9 +432,11 @@ export default function PatientFile() {
 
       <Confirm open={!!confirm} onCancel={() => setConfirm(null)} busy={false}
         title="تأكيد العملية" message={confirm?.text || ''}
+        confirmText={confirm?.action === 'void' ? 'إلغاء الدفعة' : 'تأكيد الحذف'}
         onConfirm={async () => {
           const { kind, id: tid, action } = confirm;
-          await run(() => action === 'post' ? api.post(`/${kind}/${tid}`) : api.del(`/${kind}/${tid}`), { ok: 'تم' })
+          const url = `/${kind}/${tid}`;
+          await run(() => (action === 'void' ? api.post(`${url}/void`) : api.del(url)), { ok: action === 'void' ? 'تم إلغاء الدفعة' : 'تم' })
             .then(() => { setConfirm(null); reload(); }).catch(() => {});
         }} />
 
