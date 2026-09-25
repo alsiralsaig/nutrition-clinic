@@ -5,13 +5,17 @@
   "installCommand": "npm install --no-audit --no-fund",
   "framework": "vite",
   "functions": {
-    "api/**/*.js": {
+    "api/index.js": {
       "maxDuration": 30,
       "memory": 1024,
       "includeFiles": "apps/api/node_modules/@electric-sql/pglite/dist/postgres.{wasm,data}"
     }
   },
   "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index?__p=$1"
+    },
     {
       "source": "/((?!api/).*)",
       "destination": "/index.html"

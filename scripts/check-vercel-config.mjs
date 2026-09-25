@@ -2,7 +2,7 @@
 // node scripts/check-vercel-config.mjs
 import fs from 'node:fs';
 import path from 'node:path';
-import { prefixes } from './gen-vercel-bridges.mjs';
+import { functionFiles, FUNCTION_FILE, API_REWRITE, HOBBY_FUNCTION_LIMIT } from './gen-vercel-bridges.mjs';
 
 const fail = [];
 const ok = [];
@@ -14,29 +14,27 @@ if (v.buildCommand !== 'npm run build') fail.push('buildCommand يجب أن يك
 if (!v.outputDirectory?.endsWith('apps/web/dist')) fail.push('outputDirectory غير صحيح');
 else ok.push('مجلد الإخراج يُبنى من apps/web/dist ✓');
 if (!/apps\/web/.test(root.scripts.build || '')) fail.push('npm run build لا يفوّض البناء إلى apps/web');
-if (root.engines?.node !== '20.x') fail.push('engines.node يجب أن يكون 20.x (مثبّت لتوافق better-sqlite3)');
-if (!JSON.stringify(v.functions).includes('api/**/*.js')) fail.push('functions يجب أن تغطي api/**/*.js');
-if (!v.functions?.['api/**/*.js']?.maxDuration) fail.push('maxDuration غير مضبوط لدوال Vercel');
-if (v.functions?.['api/**/*.js']?.maxDuration > 300) fail.push('maxDuration يتجاوز حد خطة Hobby (300 ثانية)');
-if (!JSON.stringify(v.rewrites).includes('(?!api/)')) fail.push('rewrite الخاص بـ SPA مفقود');
+if (root.engines?.node !== '20.x') fail.push('engines.node يجب أن يكون 20.x');
+const fnCfg = v.functions?.[FUNCTION_FILE];
+if (!fnCfg) fail.push(`functions يجب أن يضبط ${FUNCTION_FILE}`);
+if (!fnCfg?.maxDuration) fail.push('maxDuration غير مضبوط لدالة Vercel');
+if (fnCfg?.maxDuration > 300) fail.push('maxDuration يتجاوز حد خطة Hobby (300 ثانية)');
+const rw = v.rewrites || [];
+const apiIdx = rw.findIndex((r) => r.source === API_REWRITE.source && r.destination === API_REWRITE.destination);
+const spaIdx = rw.findIndex((r) => String(r.source).includes('(?!api/)'));
+if (apiIdx < 0) fail.push(`rewrite الخاص بالـ API مفقود: ${API_REWRITE.source} → ${API_REWRITE.destination}`);
+if (spaIdx < 0) fail.push('rewrite الخاص بـ SPA مفقود');
+if (apiIdx >= 0 && spaIdx >= 0 && apiIdx > spaIdx) fail.push('rewrite الـ API يجب أن يسبق rewrite الواجهة');
 if (!pkgWeb.dependencies?.react) fail.push('اعتماديات الواجهة غير معلنة في apps/web/package.json');
 
-// ── تغطية المسارات: هذا هو الشرط الذي كان يكسر النشر ──
-// Vercel لا يبني دالة بصيغة api/[[...path]].js، فيمرّ مقطع واحد فقط وترجع بقية المسارات NOT_FOUND.
-for (const f of fs.existsSync('api') ? fs.readdirSync('api') : []) {
-  if (f.includes('[[')) fail.push(`صيغة غير مدعومة على Vercel: api/${f} — استعمل مجلداً لكل بادئة`);
-}
-const list = prefixes();
-const { SINGLE_FILES } = await import('./gen-vercel-bridges.mjs');
-const missing = [];
-for (const p of list) {
-  for (const f of ['index.js', '[...path].js']) {
-    if (!fs.existsSync(path.join('api', p, f))) missing.push(`api/${p}/${f}`);
-  }
-}
-for (const f of SINGLE_FILES) if (!fs.existsSync(path.join('api', f))) missing.push(`api/${f}`);
-if (missing.length) fail.push(`جسور مفقودة (${missing.length}): ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ' …' : ''}\n    أعد التوليد: node scripts/gen-vercel-bridges.mjs`);
-else ok.push(`${list.length} بادئة API (${list.length * 2 + SINGLE_FILES.length} دالة جسر) مغطاة بالكامل ✓`);
+// ── عدد الدوال: هذا ما كان يُفشل النشر ──
+// خطة Hobby: "No more than 12 Serverless Functions can be added to a Deployment".
+// وصيغة api/[[...path]].js لا يبنيها Vercel (يمرّ مقطع واحد فقط) — لذلك دالة واحدة + rewrite.
+const fns = functionFiles();
+for (const f of fns) if (f.includes('[[')) fail.push(`صيغة غير مدعومة على Vercel: ${f}`);
+if (fns.length > HOBBY_FUNCTION_LIMIT) fail.push(`${fns.length} دالة في api/ — خطة Hobby تسمح بـ ${HOBBY_FUNCTION_LIMIT} فقط. أعد التوليد: node scripts/gen-vercel-bridges.mjs`);
+else if (!fns.includes(FUNCTION_FILE)) fail.push(`${FUNCTION_FILE} مفقود — node scripts/gen-vercel-bridges.mjs`);
+else ok.push(`${fns.length} دالة Vercel فقط (${fns.join(', ')}) — ضمن حد Hobby (${HOBBY_FUNCTION_LIMIT}) ✓`);
 
 // يجب أن يصدّر server.js دالة قابلة للاستعمال كـ handler
 const srv = fs.readFileSync('apps/api/src/server.js', 'utf8');

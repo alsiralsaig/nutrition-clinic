@@ -230,9 +230,10 @@ SIM_DATABASE_URL=postgres://… npm run deploy:sim        # 22 فحصاً: حا�
 
 ## 9) النشر على Vercel
 
-الإعداد في جذر المستودع: `vercel.json` + **جسور `api/<بادئة>/`** التي تصدّر تطبيق Express كما هو
-(نفس الملفات التي تعمل محلياً). الواجهة تُبنى بـ `npm run build` وتُقدَّم من `apps/web/dist`،
-وأي مسار غير `/api/*` يعود إلى `index.html`.
+الإعداد في جذر المستودع: `vercel.json` + **دالة واحدة `api/index.js`** تصدّر تطبيق Express كما هو
+(نفس الملفات التي تعمل محلياً). `vercel.json` يوجّه كل `/api/*` إليها (`/api/(.*)` ← `/api/index?__p=$1`)
+والدالة تعيد المسار الأصلي قبل Express. الواجهة تُبنى بـ `npm run build` وتُقدَّم من `apps/web/dist`،
+وأي مسار آخر يعود إلى `index.html`.
 
 ### ربط قاعدة Neon (خطوة واحدة من لوحة Vercel)
 1. مشروعك على Vercel ← تبويب **Storage** ← **Create Database** ← **Neon** ← المنطقة الأقرب (مثلاً Frankfurt) ← **Create**.
@@ -251,14 +252,14 @@ SIM_DATABASE_URL=postgres://… npm run deploy:sim        # 22 فحصاً: حا�
 | سرّ `JWT` | ثابت معلن | `JWT_SECRET` إن وُجد، وإلا سرّ عشوائي محفوظ في القاعدة |
 | لافتة | صفراء «وضع تجريبي» | لا شيء (أو حمراء حتى تغيير كلمة المرور) |
 
-> ⚠️ **لا تجمع الجسور في ملف واحد `api/[[...path]].js`.** Vercel لا يبني صيغة الـ catch-all الاختياري
-> داخل `api/`، فيُخدم عمق مقطع واحد فقط ويرجع كل مسار أعمق (`/api/auth/login`) `404 NOT_FOUND`.
-> النمط المدعوم: مجلد لكل بادئة فيه `index.js` و`[...path].js`. الملفات مُولّدة ومضمونة التغطية:
+> ⚠️ **دالة واحدة فقط — لماذا؟** خطة Hobby ترفض النشر إذا زادت الدوال عن 12
+> (`No more than 12 Serverless Functions…`)، وصيغة `api/[[...path]].js` لا يبنيها Vercel (مقطع واحد فقط ثم 404).
+> الحل المعتمد: دالة واحدة + rewrite. كل ذلك مولَّد ومفحوص:
 >
 > ```bash
-> npm run deploy:bridges   # يولّد الجسور من apps/api/openapi.json (مصدر الحقيقة)
-> npm run deploy:check     # يفشل لو أُضيف مسار بلا جسر، أو رجعت [[...path]]، أو بقيت لهجة SQLite
-> npm run deploy:sim       # يحاكي حاويات Vercel (مع SIM_DATABASE_URL يختبر بقاء البيانات على Postgres)
+> npm run deploy:bridges   # يولّد api/index.js ويحذف أي دوال زائدة
+> npm run deploy:check     # يفشل إذا زادت الدوال عن 12، أو غاب الـ rewrite، أو بقيت لهجة SQLite
+> npm run deploy:sim       # 23 فحصاً عبر محاكي توجيه Vercel (scripts/vercel-local.mjs يقرأ vercel.json نفسه)
 > ```
 >
 > ولأن دوال Vercel لا تخدم شيئاً خارج `/api`، فملف التوثيق متاح أيضاً على `/api/openapi.json`.

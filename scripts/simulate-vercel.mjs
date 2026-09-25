@@ -11,11 +11,8 @@ import fs from 'node:fs';
 
 const PORT = 4100 + Math.floor(Math.random() * 400); // منفذ عشوائي: لا تعارض مع عملية متبقية
 const BASE = `http://127.0.0.1:${PORT}`;
-const child = spawn(process.execPath, ['-e', `
-  import('./api/auth/[...path].js').then(({ default: app }) => {
-    app.listen(${PORT}, '127.0.0.1', () => console.log('ready'));
-  }).catch((e) => { console.error('IMPORT_FAIL', e.message); process.exit(1); });
-`], {
+// الحاوية = scripts/vercel-local.mjs: الدالة الوحيدة api/index.js + قواعد rewrites من vercel.json نفسها
+const child = spawn(process.execPath, ['scripts/vercel-local.mjs', String(PORT), 'replace'], {
   env: { ...process.env, CLINIC_LAZY_BOOT: '', VERCEL: '1', VERCEL_ENV: 'production', NODE_ENV: 'production' },
   cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'],
 });
@@ -36,7 +33,12 @@ const j = async (m, p, b, t) => {
 };
 
 for (let i = 0; i < 60 && !log.includes('ready'); i++) await new Promise((r) => setTimeout(r, 250));
-check('جسر Vercel (api/< بادئة >/[...path].js) يُحمَّل بـ VERCEL=1 بلا listen مزدوج', log.includes('ready'), log.slice(0, 300));
+check('الدالة الوحيدة api/index.js تُحمَّل بـ VERCEL=1 بلا listen مزدوج', log.includes('ready'), log.slice(0, 300));
+{
+  const { functionFiles, HOBBY_FUNCTION_LIMIT } = await import('./gen-vercel-bridges.mjs');
+  const n = functionFiles().length;
+  check(`عدد دوال Vercel = ${n} (حد Hobby ${HOBBY_FUNCTION_LIMIT})`, n >= 1 && n <= HOBBY_FUNCTION_LIMIT, String(n));
+}
 
 const h = await j('GET', '/api/health');
 check('/api/health يعمل ويُعلن الوضع التجريبي', h.json?.mode === 'demo-ephemeral', JSON.stringify(h.json));
@@ -51,15 +53,18 @@ check('كتابة مريض جديد تنجح في الوضع التجريبي', 
 const list = await j('GET', '/api/patients?q=' + encodeURIComponent('مؤقت'), null, t);
 check('الكتابة تُقرأ فوراً داخل نفس الحاوية', list.json?.items?.length === 1, JSON.stringify(list.json?.total));
 
-// كل ملفات الجسور يجب أن تصدّر نفس الكائن (لا جسر ميت)
-const bridgeFiles = fs.readdirSync(new URL('../api', import.meta.url), { recursive: true }).map(String).filter((f) => f.endsWith('.js'));
-let badBridge = '';
-for (const f of bridgeFiles) {
-  const enc = f.split('/').map(encodeURIComponent).join('/'); // الأقواس مسموحة في أسماء ملفات Vercel لكنها تحتاج ترميزاً في URL
-  const m = await import(new URL('../api/' + enc, import.meta.url).href);
-  if (typeof m.default?.use !== 'function') { badBridge = f; break; }
+// الجسر يعيد بناء المسار الأصلي من ?__p في الحالتين (مُعاد كتابته / أصلي) ويحافظ على بقية الاستعلام
+{
+  const { restoreUrl } = await import(new URL('../api/index.js', import.meta.url).href);
+  const cases = [
+    ['/api/index?__p=patients/1/profile', '/api/patients/1/profile'],
+    ['/api/index?__p=patients&q=%D8%B3&page=2', '/api/patients?q=%D8%B3&page=2'],
+    ['/api/patients/1/profile?__p=patients/1/profile', '/api/patients/1/profile'],
+    ['/api/auth/login', '/api/auth/login'],
+  ];
+  const bad = cases.filter(([i, o]) => restoreUrl(i) !== o).map(([i]) => i + ' → ' + restoreUrl(i));
+  check('الجسر يستعيد المسار الأصلي (4 أشكال لعناوين Vercel)', !bad.length, bad.join(' | '));
 }
-check(`كل جسور /api (${bridgeFiles.length} ملفاً) تصدّر تطبيق Express`, !badBridge, badBridge);
 
 // مسارات أعمق (كانت تسقط 404 على Vercel) — يجب أن يخدمها Express نفسه
 const deep1 = await j('GET', '/api/patients/1/profile', null, t);
@@ -75,14 +80,12 @@ check('ملف التوثيق متاح تحت /api/openapi.json', doc.status === 
 child.kill('SIGTERM');
 await Promise.race([new Promise((r) => child.once('exit', r)), new Promise((r) => setTimeout(r, 4000))]);
 
-const second = spawn('node', ['-e', `
-  import('./api/auth/[...path].js').then(({ default: app }) => app.listen(${PORT}, '127.0.0.1', () => console.log('ready2')));
-`], { env: { ...process.env, CLINIC_LAZY_BOOT: '', VERCEL: '1', VERCEL_ENV: 'production', NODE_ENV: 'production' }, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+const second = spawn(process.execPath, ['scripts/vercel-local.mjs', String(PORT), 'preserve'], { env: { ...process.env, CLINIC_LAZY_BOOT: '', VERCEL: '1', VERCEL_ENV: 'production', NODE_ENV: 'production' }, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
 let log2 = '';
 second.stdout.on('data', (d) => { log2 += d; });
 second.stderr.on('data', (d) => { log2 += d; });
-for (let i = 0; i < 60 && !log2.includes('ready2'); i++) await new Promise((r) => setTimeout(r, 250));
-check('الحاوية الثانية تُقلاع بلا انهيار على قرص للقراءة فقط', log2.includes('ready2'), log2.slice(0, 240));
+for (let i = 0; i < 60 && !log2.includes('ready'); i++) await new Promise((r) => setTimeout(r, 250));
+check('الحاوية الثانية تُقلاع بلا انهيار على قرص للقراءة فقط', log2.includes('ready'), log2.slice(0, 240));
 check('لا تحذير من تعذّر كتابة مفتاح الجلسة', !/تعذّر حفظ مفتاح/.test(log2), log2.slice(0, 200));
 const reused = await j('GET', '/api/patients?limit=1', null, t);
 check('توكن صدر من الحاوية الأولى مقبول في الثانية (سر JWT ثابت في الوضع التجريبي)', reused.status === 200, `status=${reused.status}`);
@@ -94,12 +97,10 @@ await new Promise((r) => setTimeout(r, 500));
 // ── المرحلة 2: Vercel + Neon (قاعدة حقيقية عبر DATABASE_URL) ──
 if (process.env.SIM_DATABASE_URL) {
   const boot = async (tag) => {
-    const p = spawn('node', ['-e', `
-      import('./api/patients/[...path].js').then(({ default: app }) => app.listen(${PORT}, '127.0.0.1', () => console.log('${tag}')));
-    `], { env: { ...process.env, CLINIC_LAZY_BOOT: '', VERCEL: '1', VERCEL_ENV: 'production', NODE_ENV: 'production', DATABASE_URL: process.env.SIM_DATABASE_URL, JWT_SECRET: '' }, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(process.execPath, ['scripts/vercel-local.mjs', String(PORT), tag === 'neon1' ? 'replace' : 'preserve'], { env: { ...process.env, CLINIC_LAZY_BOOT: '', VERCEL: '1', VERCEL_ENV: 'production', NODE_ENV: 'production', DATABASE_URL: process.env.SIM_DATABASE_URL, JWT_SECRET: '' }, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
     let l = ''; p.stdout.on('data', (d) => { l += d; }); p.stderr.on('data', (d) => { l += d; });
-    for (let i = 0; i < 80 && !l.includes(tag); i++) await new Promise((r) => setTimeout(r, 250));
-    return { p, ok: l.includes(tag), log: () => l };
+    for (let i = 0; i < 80 && !l.includes('ready'); i++) await new Promise((r) => setTimeout(r, 250));
+    return { p, ok: l.includes('ready'), log: () => l };
   };
   const c1 = await boot('neon1');
   check('Vercel+Neon: الحاوية تُقلع بـ DATABASE_URL', c1.ok, c1.log().slice(0, 300));

@@ -1,64 +1,63 @@
-// يولّد جسور Vercel: ملف لكل بادئة مسار في /api
-// السبب: Vercel يتجاهل صيغة [[...path]] الاختيارية داخل مجلد api/ مباشرة، فيمرّ مقطع واحد
-// فقط ويرا بقية المسارات 404. النمط الموثّق: مجلد لكل بادئة بداخله index.js و[...path].js.
-// node scripts/gen-vercel-bridges.mjs   (ويُستدعى من deploy:check للتحقق من التغطية)
+// يولّد دالة Vercel الوحيدة: api/index.js — كل /api/* يُعاد توجيهه إليها من vercel.json
+// لماذا دالة واحدة؟ خطة Hobby تمنع أكثر من 12 دالة في النشر الواحد
+//   ("No more than 12 Serverless Functions can be added to a Deployment on the Hobby plan").
+// ولماذا لا [[...path]].js؟ Vercel لا يبني الـ catch-all الاختياري داخل api/ (يمرّ مقطع واحد فقط).
+// الحل: rewrite  /api/(.*) → /api/index?__p=$1  والجسر يعيد بناء المسار الأصلي قبل Express.
+// node scripts/gen-vercel-bridges.mjs   (ويُستدعى من deploy:check)
 import fs from 'node:fs';
 import path from 'node:path';
 
 const ROOT = path.resolve(import.meta.dirname, '..');
 const API_DIR = path.join(ROOT, 'api');
-const OPENAPI = path.join(ROOT, 'apps/api/openapi.json');
+export const FUNCTION_FILE = 'api/index.js';
+export const API_REWRITE = { source: '/api/(.*)', destination: '/api/index?__p=$1' };
+export const HOBBY_FUNCTION_LIMIT = 12;
 
-// بادئات المسارات التي يفتحها العميل، مستخرجة من عقد OpenAPI (مصدر الحقيقة)
-export function prefixes() {
-  const spec = JSON.parse(fs.readFileSync(OPENAPI, 'utf8'));
-  const set = new Set();
-  for (const p of Object.keys(spec.paths)) {
-    const first = p.replace(/^\/+/, '').split('/')[1]; // /api/<this>/...
-    if (first && !first.startsWith('{')) set.add(first);
-  }
-  // ملف التوثيق يُقدَّم تحت /api/openapi.json (ملف واحد بامتداد مركّب، لا مجلد بنقطة)
-  set.delete('openapi.json');
-  return [...set].sort();
+const BRIDGE = `// مُولَّد بواسطة scripts/gen-vercel-bridges.mjs — لا تحرّره يدوياً.
+// الدالة الوحيدة على Vercel: نفس تطبيق Express المحلي بلا أي منطق مكرر.
+// vercel.json يوجّه /api/<أي مسار> إلى هنا بالشكل /api/index?__p=<أي مسار>.
+// نعيد req.url إلى المسار الأصلي (سواء مرّره Vercel أصلياً أو مُعاد كتابته) ثم نسلّمه لـ Express.
+import app from '../apps/api/src/server.js';
+
+export function restoreUrl(url) {
+  const u = new URL(url, 'http://vercel.local');
+  if (!u.searchParams.has('__p')) return url;
+  const p = u.searchParams.get('__p').replace(/^\\/+/, '');
+  u.searchParams.delete('__p');
+  const rewritten = u.pathname === '/api/index' || u.pathname === '/api/index.js' || u.pathname === '/api' || u.pathname === '/api/';
+  const pathname = rewritten ? '/api/' + p : u.pathname;
+  return pathname + (u.searchParams.size ? '?' + u.searchParams.toString() : '');
 }
 
-// /api/openapi.json -> api/openapi.json.js (مقطع واحد، فلا يحتاج مجلداً)
-export const SINGLE_FILES = ['openapi.json.js'];
+export default function handler(req, res) {
+  req.url = restoreUrl(req.url);
+  return app(req, res);
+}
+`;
 
-const BRIDGE = (depth, comment) =>
-  `// مُولَّد بواسطة scripts/gen-vercel-bridges.mjs — لا تحرّره يدوياً.\n` +
-  `// نفس تطبيق Express المحلي، بلا أي منطق مكرر.\n${comment}` +
-  `export { default as default } from '${'../'.repeat(depth)}apps/api/src/server.js';\n`;
+export function functionFiles() {
+  if (!fs.existsSync(API_DIR)) return [];
+  return fs.readdirSync(API_DIR, { recursive: true }).map(String)
+    .filter((f) => /\.(c|m)?(js|ts)$/.test(f))
+    .filter((f) => !f.split('/').some((seg) => seg.startsWith('_') || seg.startsWith('.')))
+    .map((f) => 'api/' + f);
+}
 
 export function generate({ write = true } = {}) {
-  const list = prefixes();
-  const wanted = [];
-  for (const p of list) {
-    wanted.push([`api/${p}/index.js`, BRIDGE(2, `// يخدم /api/${p} تماماً\n`)]);
-    wanted.push([`api/${p}/[...path].js`, BRIDGE(2, `// يخدم /api/${p}/* بكل أعماقه\n`)]);
-  }
-  for (const f of SINGLE_FILES) wanted.push([`api/${f}`, BRIDGE(1, '// يخدم /api/openapi.json (مقطع واحد)\n')]);
   if (write) {
-    // نظّف أي جسر قديم بصيغة مدموجة لا يدعمها Vercel
-    for (const f of fs.readdirSync(API_DIR)) {
-      if (f.includes('[[')) fs.rmSync(path.join(API_DIR, f), { force: true });
+    // احذف جسور النمط القديم (مجلد لكل بادئة = 29 دالة) — تتجاوز حد الخطة المجانية
+    for (const d of fs.existsSync(API_DIR) ? fs.readdirSync(API_DIR, { withFileTypes: true }) : []) {
+      const abs = path.join(API_DIR, d.name);
+      if (d.isDirectory()) fs.rmSync(abs, { recursive: true, force: true });
+      else if (d.name !== 'index.js') fs.rmSync(abs, { force: true });
     }
-    const keep = new Set(list);
-    for (const d of fs.readdirSync(API_DIR, { withFileTypes: true })) {
-      if (d.isDirectory() && !keep.has(d.name)) fs.rmSync(path.join(API_DIR, d.name), { recursive: true, force: true });
-      if (d.isFile() && d.name.includes('.') && !SINGLE_FILES.includes(d.name)) fs.rmSync(path.join(API_DIR, d.name), { force: true });
-    }
-    for (const [rel, body] of wanted) {
-      const abs = path.join(ROOT, rel);
-      fs.mkdirSync(path.dirname(abs), { recursive: true });
-      fs.writeFileSync(abs, body);
-    }
+    fs.mkdirSync(API_DIR, { recursive: true });
+    fs.writeFileSync(path.join(ROOT, FUNCTION_FILE), BRIDGE);
   }
-  return { list, files: wanted.map(([r]) => r) };
+  return { files: functionFiles() };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const { list, files } = generate();
-  console.log(`  ${list.length} بادئة → ${files.length} ملف جسر في api/`);
-  console.log('  ' + list.join(' · '));
+  const { files } = generate();
+  console.log(`  ${files.length} دالة Vercel: ${files.join(', ')}  (الحد في Hobby: ${HOBBY_FUNCTION_LIMIT})`);
 }
