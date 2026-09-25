@@ -100,3 +100,45 @@ export function readBackupFile(file) {
     fr.readAsText(file);
   });
 }
+
+// ================= بوابة المريض =================
+// توكن مستقل عن توكن الموظف: يمكن فتح البوابة على هاتف المريض دون أي صلاحية على بيانات العيادة.
+const PORTAL_KEY = 'clinic.portal';
+export const portalToken = {
+  get: () => localStorage.getItem(PORTAL_KEY) || '',
+  set: (t) => localStorage.setItem(PORTAL_KEY, t),
+  clear: () => localStorage.removeItem(PORTAL_KEY),
+};
+
+async function portalRequest(method, path, body) {
+  const token = portalToken.get();
+  const res = await fetch(`/api/portal${path}`, {
+    method,
+    headers: { ...(body !== undefined ? { 'content-type': 'application/json' } : {}), ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  const text = await res.text();
+  let payload = null;
+  try { payload = text ? JSON.parse(text) : null; } catch { payload = { error: text }; }
+  if (res.status === 401 && !path.startsWith('/auth/')) {
+    portalToken.clear();
+    window.dispatchEvent(new CustomEvent('clinic:portal-signed-out', { detail: payload?.error }));
+  }
+  if (!res.ok) throw new ApiError(payload?.error ? __t(payload.error) : `خطأ ${res.status}`, res.status, payload);
+  return currentLang() === 'en' ? translateLabels(payload) : payload;
+}
+
+export const portalApi = {
+  get: (p) => portalRequest('GET', p),
+  post: (p, b) => portalRequest('POST', p, b ?? {}),
+  put: (p, b) => portalRequest('PUT', p, b ?? {}),
+  del: (p) => portalRequest('DELETE', p),
+};
+
+/** يستخرج رمز الدخول من نص QR (رابط البوابة الكامل أو الرمز وحده) */
+export function tokenFromQr(text) {
+  const s = String(text || '').trim();
+  const m = s.match(/[?&]t=([A-Za-z0-9_-]{20,64})/);
+  if (m) return m[1];
+  return /^[A-Za-z0-9_-]{20,64}$/.test(s) ? s : null;
+}

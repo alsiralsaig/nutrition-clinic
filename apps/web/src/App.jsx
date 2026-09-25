@@ -13,6 +13,9 @@ import Payments from './pages/Payments.jsx';
 import Reports from './pages/Reports.jsx';
 import Settings from './pages/Settings.jsx';
 
+// بوابة المريض تُحمَّل عند الطلب فقط (لا تثقل تطبيق العيادة ولا العكس)
+const Portal = React.lazy(() => import('./pages/Portal.jsx'));
+
 function Protected({ children }) {
   const { user, ready } = useApp();
   const loc = useLocation();
@@ -25,6 +28,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/portal/*" element={<React.Suspense fallback={<div className="grid min-h-screen place-items-center"><Spinner /></div>}><Portal /></React.Suspense>} />
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/patients" element={<Protected><Patients /></Protected>} />
       <Route path="/patients/:id" element={<Protected><PatientFile /></Protected>} />

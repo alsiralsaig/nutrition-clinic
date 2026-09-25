@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nutrition Clinic API",
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "واجهة REST لنظام إدارة عيادة التغذية. مصمَّمة ليستهلكها موقع الويب وتطبيق الموبايل (Android/iOS) الخاص بالمريض دون أي تعديل. المصادقة: POST /api/auth/login ثم إرسال `Authorization: Bearer <token>` في كل طلب. التوكن صالح 12 ساعة.",
     "contact": {
       "name": "Clinic IT"
@@ -67,6 +67,26 @@
     {
       "name": "messaging",
       "description": "WhatsApp Cloud API، التنبيهات، المهمة اليومية"
+    },
+    {
+      "name": "habits",
+      "description": "العادات اليومية (ماء/نوم/نشاط) — من البوابة أو العيادة"
+    },
+    {
+      "name": "portal-access",
+      "description": "رموز QR والدخول لبوابة المريض"
+    },
+    {
+      "name": "waitlist",
+      "description": "قائمة الانتظار الافتراضية والعروض التلقائية"
+    },
+    {
+      "name": "calls",
+      "description": "الاستشارات المرئية (إشارات WebRTC عبر الاستطلاع)"
+    },
+    {
+      "name": "portal",
+      "description": "واجهة المريض (توكن مريض — تطبيق الموبايل يستعملها نفسها)"
     }
   ],
   "paths": {
@@ -1557,6 +1577,1106 @@
             "description": "CRON_SECRET خاطئ"
           }
         }
+      }
+    },
+    "/api/appointments/{id}": {
+      "get": {
+        "tags": [
+          "appointments"
+        ],
+        "summary": "موعد واحد",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/patients/{id}/habits": {
+      "get": {
+        "tags": [
+          "habits"
+        ],
+        "summary": "ملخص العادات: سلسلة الأيام، المتوسطات، نسبة تحقيق الأهداف",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 7,
+              "maximum": 180
+            }
+          }
+        ]
+      }
+    },
+    "/api/patients/{id}/habits/{date}": {
+      "put": {
+        "tags": [
+          "habits"
+        ],
+        "summary": "تسجيل/تعديل يوم (المصدر: العيادة)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "water_ml": {
+                    "type": "integer"
+                  },
+                  "add_water_ml": {
+                    "type": "integer",
+                    "description": "إضافة تراكمية (±)"
+                  },
+                  "sleep_hours": {
+                    "type": "number"
+                  },
+                  "activity_min": {
+                    "type": "integer"
+                  },
+                  "activity_type": {
+                    "type": "string",
+                    "enum": [
+                      "walk",
+                      "run",
+                      "gym",
+                      "cycling",
+                      "swim",
+                      "sport",
+                      "home",
+                      "other"
+                    ]
+                  },
+                  "steps": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/patients/{id}/habit-targets": {
+      "put": {
+        "tags": [
+          "habits"
+        ],
+        "summary": "أهداف مخصصة (null = تلقائي: الماء 35 مل/كغ)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "water_ml": {
+                    "type": "integer",
+                    "nullable": true
+                  },
+                  "sleep_hours": {
+                    "type": "number",
+                    "nullable": true
+                  },
+                  "activity_min": {
+                    "type": "integer",
+                    "nullable": true
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/patients/{id}/portal-access": {
+      "get": {
+        "tags": [
+          "portal-access"
+        ],
+        "summary": "حالة الوصول (مفعّل؟ آخر دخول، عدد المرات)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "portal-access"
+        ],
+        "summary": "إصدار رمز QR + رمز يدوي (يُلغي السابق؛ يظهر مرة واحدة)",
+        "responses": {
+          "201": {
+            "description": "{ token, code, file_no, url }"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      },
+      "delete": {
+        "tags": [
+          "portal-access"
+        ],
+        "summary": "إيقاف الوصول (يُخرج كل الأجهزة)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/patients/{id}/portal-access/send": {
+      "post": {
+        "tags": [
+          "portal-access"
+        ],
+        "summary": "إصدار رمز جديد وإرساله للمريض بواتساب",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/waitlist": {
+      "get": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "القائمة + العروض + العدادات",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "waiting",
+                "booked",
+                "cancelled",
+                "expired"
+              ]
+            }
+          }
+        ]
+      },
+      "post": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "إضافة مريض",
+        "responses": {
+          "201": {
+            "description": "WaitlistEntry"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "patient_id"
+                ],
+                "properties": {
+                  "patient_id": {
+                    "type": "integer"
+                  },
+                  "date_from": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "date_to": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 6
+                    },
+                    "description": "0=الأحد … 6=السبت"
+                  },
+                  "time_pref": {
+                    "type": "string",
+                    "enum": [
+                      "any",
+                      "morning",
+                      "afternoon",
+                      "evening"
+                    ]
+                  },
+                  "visit_type": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "in_person",
+                      "video"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/waitlist/{id}": {
+      "put": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "تعديل طلب",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "date_from": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "date_to": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 6
+                    },
+                    "description": "0=الأحد … 6=السبت"
+                  },
+                  "time_pref": {
+                    "type": "string",
+                    "enum": [
+                      "any",
+                      "morning",
+                      "afternoon",
+                      "evening"
+                    ]
+                  },
+                  "visit_type": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "in_person",
+                      "video"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "إزالة (تُلغى عروضه)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/waitlist/offer-slot": {
+      "post": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "عرض موعد شاغر يدوياً على المطابقين (واتساب)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "date",
+                  "time"
+                ],
+                "properties": {
+                  "date": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "time": {
+                    "type": "string",
+                    "example": "10:30"
+                  },
+                  "duration_min": {
+                    "type": "integer"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/waitlist/offers/{id}/accept": {
+      "post": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "حجز العرض للمريض (أول من يؤكد)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/waitlist/offers/{id}/decline": {
+      "post": {
+        "tags": [
+          "waitlist"
+        ],
+        "summary": "رفض العرض — يُعرض تلقائياً على التالي",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/calls/ice": {
+      "get": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "خوادم STUN/TURN",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/appointments/{id}/call": {
+      "post": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "بدء استشارة مرئية من تفاصيل الموعد (+ إشعار واتساب)",
+        "responses": {
+          "201": {
+            "description": "{ call, ice_servers, join_url, message }"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "notify": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{id}": {
+      "get": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "بيانات المكالمة",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/calls/{id}/signals": {
+      "get": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "سحب إشارات الطرف الآخر (after=-1 → آخر معرّف فقط)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/api/calls/{id}/signal": {
+      "post": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "إرسال إشارة",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "kind"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "hello",
+                      "offer",
+                      "answer",
+                      "ice",
+                      "bye",
+                      "state"
+                    ]
+                  },
+                  "payload": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/calls/{id}/end": {
+      "post": {
+        "tags": [
+          "calls"
+        ],
+        "summary": "إنهاء المكالمة",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/portal/auth/qr": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "دخول المريض برمز QR",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "token"
+                ],
+                "properties": {
+                  "token": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/portal/auth/code": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "دخول برقم الملف + الرمز (الحالة والشرطة لا تهم)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "file_no",
+                  "code"
+                ],
+                "properties": {
+                  "file_no": {
+                    "type": "string"
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": []
+      }
+    },
+    "/api/portal/me": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "كل ما يحتاجه تطبيق المريض: الملف، التقدم، الخطة، العادات، المواعيد، الانتظار، العروض، المكالمة",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/portal/habits": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "ملخص عاداتي",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 7,
+              "maximum": 90
+            }
+          }
+        ]
+      }
+    },
+    "/api/portal/habits/{date}": {
+      "put": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "تسجيل عادات يوم (آخر 7 أيام فقط)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "name": "date",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "date"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "water_ml": {
+                    "type": "integer"
+                  },
+                  "add_water_ml": {
+                    "type": "integer",
+                    "description": "إضافة تراكمية (±)"
+                  },
+                  "sleep_hours": {
+                    "type": "number"
+                  },
+                  "activity_min": {
+                    "type": "integer"
+                  },
+                  "activity_type": {
+                    "type": "string",
+                    "enum": [
+                      "walk",
+                      "run",
+                      "gym",
+                      "cycling",
+                      "swim",
+                      "sport",
+                      "home",
+                      "other"
+                    ]
+                  },
+                  "steps": {
+                    "type": "integer"
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portal/appointments/{id}/cancel": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "إلغاء موعدي (قبل 3 ساعات على الأقل) — يُعرض على قائمة الانتظار",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/portal/waitlist": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "طلب موعد أقرب",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "date_from": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "date_to": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 6
+                    },
+                    "description": "0=الأحد … 6=السبت"
+                  },
+                  "time_pref": {
+                    "type": "string",
+                    "enum": [
+                      "any",
+                      "morning",
+                      "afternoon",
+                      "evening"
+                    ]
+                  },
+                  "visit_type": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "in_person",
+                      "video"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "تعديل طلبي",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [],
+                "properties": {
+                  "date_from": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "date_to": {
+                    "type": "string",
+                    "format": "date"
+                  },
+                  "days": {
+                    "type": "array",
+                    "items": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 6
+                    },
+                    "description": "0=الأحد … 6=السبت"
+                  },
+                  "time_pref": {
+                    "type": "string",
+                    "enum": [
+                      "any",
+                      "morning",
+                      "afternoon",
+                      "evening"
+                    ]
+                  },
+                  "visit_type": {
+                    "type": "string"
+                  },
+                  "mode": {
+                    "type": "string",
+                    "enum": [
+                      "in_person",
+                      "video"
+                    ]
+                  },
+                  "note": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "الخروج من القائمة",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/portal/offers/{id}/accept": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "قبول عرض موعد",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/portal/offers/{id}/decline": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "رفض عرض موعد",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/portal/ice": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "خوادم STUN/TURN",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/portal/calls/active": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "المكالمة المفتوحة لي (إن وُجدت)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/portal/calls/{id}/signals": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "سحب إشارات الأخصائي",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          },
+          {
+            "name": "after",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ]
+      }
+    },
+    "/api/portal/calls/{id}/signal": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "إرسال إشارة",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
+      }
+    },
+    "/api/portal/calls/{id}/leave": {
+      "post": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "مغادرة المكالمة (الإنهاء بيد الأخصائي)",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        },
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ]
       }
     }
   },

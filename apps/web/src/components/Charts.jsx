@@ -326,3 +326,54 @@ export function WeekdayChart({ data = [], height = 190 }) {
     </ResponsiveContainer>, height,
   );
 }
+
+/** عادة يومية واحدة (ماء/نوم/نشاط): أعمدة ملوّنة حسب تحقيق الهدف + خط الهدف */
+export const HABIT_META = {
+  water_ml: { name: 'الماء', unit: ' مل', colorKey: 'teal', digits: 0 },
+  sleep_hours: { name: 'النوم', unit: ' س', colorKey: 'sun', digits: 1 },
+  activity_min: { name: 'النشاط', unit: ' د', colorKey: 'leaf', digits: 0 },
+};
+export function HabitChart({ series = [], metric = 'water_ml', target, height = 170 }) {
+  const t = useChartTheme();
+  const m = HABIT_META[metric];
+  const color = t[m.colorKey];
+  const data = series.map((s) => ({ date: s.date, label: String(s.date).slice(5), v: s[metric] }));
+  return wrap(
+    <ResponsiveContainer>
+      <BarChart data={data} margin={{ top: 8, right: 6, left: -22, bottom: 0 }}>
+        {grid(t)}
+        <XAxis dataKey="label" {...axisProps(t)} interval="preserveStartEnd" minTickGap={14} />
+        <YAxis {...axisProps(t)} />
+        <Tooltip cursor={{ fill: t.cursor }} content={<TooltipBox unit={m.unit} digits={m.digits} />} />
+        {target ? <ReferenceLine y={target} stroke={t.ref} strokeOpacity={0.45} strokeDasharray="5 4" label={{ value: `الهدف ${fmt(target, m.digits)}`, fill: t.axis, fontSize: 10, position: 'insideTopLeft', opacity: 0.6 }} /> : null}
+        <Bar dataKey="v" name={m.name} radius={[5, 5, 0, 0]} maxBarSize={22}>
+          {data.map((d) => <Cell key={d.date} fill={color} fillOpacity={d.v == null ? 0 : target && d.v >= target ? 1 : 0.45} />)}
+        </Bar>
+      </BarChart>
+    </ResponsiveContainer>, height,
+  );
+}
+
+/** بوابة المريض: منحنى الوزن عبر القياسات + خط الهدف */
+export function PortalWeightChart({ series = [], goal, height = 200 }) {
+  const t = useChartTheme();
+  const data = series.map((s) => ({ ...s, label: String(s.date).slice(5) }));
+  return wrap(
+    <ResponsiveContainer>
+      <AreaChart data={data} margin={{ top: 8, right: 8, left: -20, bottom: 0 }}>
+        <defs>
+          <linearGradient id="pw" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={t.teal} stopOpacity={0.32} />
+            <stop offset="100%" stopColor={t.teal} stopOpacity={0.02} />
+          </linearGradient>
+        </defs>
+        {grid(t)}
+        <XAxis dataKey="label" {...axisProps(t)} minTickGap={12} />
+        <YAxis {...axisProps(t)} domain={['dataMin - 2', 'dataMax + 2']} />
+        <Tooltip content={<TooltipBox unit=" كغ" />} />
+        {goal ? <ReferenceLine y={goal} stroke={t.leaf} strokeDasharray="5 4" label={{ value: `الهدف ${goal}`, fill: t.leaf, fontSize: 10, position: 'insideBottomLeft' }} /> : null}
+        <Area type="monotone" dataKey="weight_kg" name="الوزن" stroke={t.teal} strokeWidth={2.6} fill="url(#pw)" dot={{ r: 3 }} />
+      </AreaChart>
+    </ResponsiveContainer>, height,
+  );
+}

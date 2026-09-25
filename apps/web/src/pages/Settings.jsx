@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useApp, useLoader } from '../app-context.jsx';
 import { api, readBackupFile, saveBackupJson } from '../api.js';
+import { PortalSettingsCard } from '../components/Care.jsx';
 import { Badge, Card, Confirm, Field, Icon, Input, Modal, Select, Spinner, Table, Textarea, Toggle } from '../components/ui.jsx';
 import { ROLES, dateTime } from '../format.js';
 import { WaIcon } from '../components/Smart.jsx';
@@ -457,6 +458,8 @@ function MessagingTab({ data, isAdmin, reload }) {
             </div>
           )}
         </Card>
+
+        <PortalSettingsCard settings={data.settings} isAdmin={isAdmin} onSaved={reload} />
 
         <Card title="التذكيرات التلقائية" subtitle="مهمة يومية على Vercel Cron الساعة 7:00 صباحاً بتوقيت الخرطوم (05:00 UTC)" icon={<Icon.clock />}
           actions={isAdmin && <button className="btn-soft btn-sm" onClick={runNow}><Icon.refresh /> تشغيل الآن</button>}>

@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 /** يرفع هذا الرقم عند أي تعديل على schema.sql كي تُطبَّق التعديلات على القواعد الموجودة */
-export const SCHEMA_VERSION = '3';
+export const SCHEMA_VERSION = '4';
 
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 export const DRIVER = DATABASE_URL ? 'postgres' : 'pglite';
@@ -225,6 +225,10 @@ export const DEFAULT_SETTINGS = [
   ['clinic.country_code', '249'],            // لتحويل أرقام الهواتف المحلية إلى صيغة واتساب الدولية
   ['clinic.reminders_enabled', true],        // تذكير المواعيد التلقائي (المهمة اليومية)
   ['clinic.daily_reminder_enabled', true],   // التذكير اليومي بالخطة للمرضى المشتركين
+  ['clinic.portal_enabled', true],           // بوابة المريض (QR)
+  ['clinic.waitlist_enabled', true],         // عرض المواعيد الملغاة على قائمة الانتظار تلقائياً
+  ['clinic.waitlist_offer_minutes', 120],    // مدة صلاحية العرض قبل انتقاله للتالي
+  ['clinic.waitlist_batch', 3],              // عدد المرضى الذين يُعرض عليهم الموعد في آن واحد
   ['clinic.printFooter', 'هذا التقرير صادر إلكترونياً من نظام إدارة العيادة ولا يُعتد به إلا معتمدًا من الإدارة.'],
 ];
 

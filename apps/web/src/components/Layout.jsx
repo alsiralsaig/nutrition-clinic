@@ -18,7 +18,7 @@ export const NAV = [
   { to: '/settings', label: 'الإعدادات والنسخ', icon: Icon.gear },
 ];
 
-function Toasts() {
+export function Toasts() {
   const { toasts, dismissToast } = useApp();
   const tones = {
     good: 'border-leaf-500/40 bg-leaf-50 text-leaf-600',
@@ -208,7 +208,7 @@ function QuickSearch() {
 }
 
 /** تبديل اللغة (يعيد تحميل الصفحة) */
-function LangToggle() {
+export function LangToggle() {
   const en = currentLang() === 'en';
   return (
     <button type="button" className="btn-ghost btn-sm !px-2.5 font-extrabold" onClick={() => setLang(en ? 'ar' : 'en')}

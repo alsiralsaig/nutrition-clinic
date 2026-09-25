@@ -3,13 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useApp, useLoader } from '../app-context.jsx';
 import { api } from '../api.js';
 import { AppointmentForm } from '../components/Forms.jsx';
+import { AppointmentDetails, WaitlistPanel, waitlistToast } from '../components/Care.jsx';
 import { Badge, Card, Confirm, Empty, ErrorBox, Icon, Input, Select, Spinner, Stat, Table } from '../components/ui.jsx';
 import { APPT_STATUS, VISIT_TYPES, addDays, fmt, longDate, shortDate, todayISO } from '../format.js';
 
 const STATUS_KEYS = ['scheduled', 'confirmed', 'done', 'cancelled', 'no_show'];
 
 export default function Appointments() {
-  const { run, canWrite } = useApp();
+  const { run, canWrite, toast } = useApp();
   const nav = useNavigate();
   const [params, setParams] = useSearchParams();
   const [date, setDate] = useState(params.get('date') || todayISO());
@@ -18,8 +19,25 @@ export default function Appointments() {
   const [editing, setEditing] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [filter, setFilter] = useState({ status: '', q: '' });
+  const [details, setDetails] = useState(null); // { appt, autoCall }
+  const [wlKey, setWlKey] = useState(0);
+  const [wlFocus, setWlFocus] = useState(false);
 
   useEffect(() => { if (params.get('new') === '1') { setModal('new'); params.delete('new'); setParams(params, { replace: true }); } }, []); // eslint-disable-line
+  // روابط التنبيهات: ?call=<موعد> يفتح التفاصيل ويبدأ المكالمة · ?waitlist=1 يبرز قائمة الانتظار
+  useEffect(() => {
+    const callId = params.get('call');
+    const appt = params.get('appt');
+    if (callId || appt) {
+      api.get(`/appointments/${callId || appt}`).then((a) => { setDate(a.date); setDetails({ appt: a, autoCall: !!callId }); }).catch(() => {});
+      params.delete('call'); params.delete('appt'); setParams(params, { replace: true });
+    }
+    if (params.get('waitlist') === '1') {
+      setWlFocus(true);
+      setTimeout(() => document.getElementById('waitlist-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 350);
+      params.delete('waitlist'); setParams(params, { replace: true });
+    }
+  }, [params]); // eslint-disable-line
 
   const { data, loading, error, reload } = useLoader(async () => {
     if (mode === 'day') return { kind: 'day', ...(await api.get(`/appointments/today?date=${date}`)) };
@@ -37,7 +55,8 @@ export default function Appointments() {
   }, [data]);
 
   const set = async (id, status) => {
-    await run(() => api.post(`/appointments/${id}/status`, { status }), { ok: `الحالة الآن: ${APPT_STATUS[status].label}` }).then(reload).catch(() => {});
+    const r = await run(() => api.post(`/appointments/${id}/status`, { status }), { ok: `الحالة الآن: ${APPT_STATUS[status].label}` }).catch(() => null);
+    if (r) { waitlistToast(toast, r); reload(); if (r.waitlist) setWlKey((k) => k + 1); }
   };
 
   const slots = useMemo(() => {
@@ -91,7 +110,7 @@ export default function Appointments() {
               action={canWrite ? <button className="btn-primary" onClick={() => { setEditing(null); setModal('new'); }}><Icon.plus /> تسجيل موعد</button> : null} />
           ) : (
             <div className="grid gap-2">
-              {slots.filter((t) => items.some((a) => a.time === t) || (t >= '09:00' && t <= '20:00')).map((t) => {
+              {[...new Set([...slots.filter((t) => t <= '20:00'), ...items.map((a) => a.time)])].sort().map((t) => {
                 const at = items.filter((a) => a.time === t);
                 return (
                   <div key={t} className={`grid items-stretch gap-3 rounded-xl border p-2.5 transition sm:grid-cols-[64px_1fr] ${at.length ? 'border-brand-200 bg-brand-50/40' : 'border-line/60 bg-surface'}`}>
@@ -109,14 +128,16 @@ export default function Appointments() {
                       {at.map((a) => (
                         <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 shadow-card">
                           <button onClick={() => nav(`/patients/${a.patient_id}`)} className="min-w-0 flex-1 text-start">
-                            <p className="truncate text-[13.5px] font-extrabold hover:text-brand-700">{a.patient_name}</p>
+                            <p className="truncate text-[13.5px] font-extrabold hover:text-brand-700">{a.mode === 'video' && <span title="استشارة مرئية">🎥 </span>}{a.patient_name}</p>
                             <p className="truncate text-[11.5px] font-bold text-ink/45 tnum">{a.file_no} · {a.phone || 'بدون هاتف'} · {a.duration_min} دقيقة</p>
                             {a.notes && <p className="mt-1 truncate text-[11.5px] text-ink/55">{a.notes}</p>}
                           </button>
                           <Badge tone={VISIT_TYPES[a.visit_type]?.color}>{VISIT_TYPES[a.visit_type]?.label}</Badge>
                           <Badge tone={APPT_STATUS[a.status]?.color}>{APPT_STATUS[a.status]?.label}</Badge>
+                          {!canWrite && <button className="btn-soft btn-sm !px-2" title="التفاصيل" onClick={() => setDetails({ appt: a })}><Icon.chev /></button>}
                           {canWrite && (
                             <div className="flex gap-1">
+                              <button className="btn-soft btn-sm !px-2" title="التفاصيل والاستشارة المرئية" data-appt-details onClick={() => setDetails({ appt: a })}>{a.mode === 'video' ? '🎥' : <Icon.chev />}</button>
                               {a.status === 'scheduled' && <button className="btn-soft btn-sm !px-2" title="تأكيد" onClick={() => set(a.id, 'confirmed')}><Icon.check /></button>}
                               {a.status !== 'done' && <button className="btn-ghost btn-sm !px-2" title="تمت الزيارة" onClick={() => set(a.id, 'done')}><Icon.clock /></button>}
                               {a.status !== 'cancelled' && <button className="btn-danger btn-sm !px-2" title="ملغي" onClick={() => set(a.id, 'cancelled')}><Icon.close /></button>}
@@ -143,7 +164,7 @@ export default function Appointments() {
                   {list.sort((a, b) => a.time.localeCompare(b.time)).map((a) => (
                     <tr key={a.id} className="group">
                       <td className="tnum font-extrabold">{a.time}</td>
-                      <td><button onClick={() => nav(`/patients/${a.patient_id}`)} className="font-bold hover:text-brand-700">{a.patient_name}</button></td>
+                      <td><button onClick={() => setDetails({ appt: a })} className="font-bold hover:text-brand-700">{a.mode === 'video' && '🎥 '}{a.patient_name}</button></td>
                       <td className="tnum text-brand-700">{a.file_no}</td>
                       <td><Badge tone={VISIT_TYPES[a.visit_type]?.color}>{VISIT_TYPES[a.visit_type]?.label}</Badge></td>
                       <td>
@@ -166,10 +187,15 @@ export default function Appointments() {
 
       <AppointmentForm open={!!modal} patient={editing?.patient_id ? { id: editing.patient_id, full_name: editing.patient_name, file_no: editing.file_no } : null}
         appointment={editing?.id ? editing : null} defaultDate={editing?.time ? date : date}
-        onClose={() => { setModal(null); setEditing(null); }} onSaved={() => { setDate(data?.kind === 'day' ? date : date); reload(); }} />
+        onClose={() => { setModal(null); setEditing(null); }} onSaved={() => { reload(); setWlKey((k) => k + 1); }} />
 
       <Confirm open={!!confirm} title="حذف موعد" message={confirm?.text || ''} onCancel={() => setConfirm(null)}
-        onConfirm={() => run(() => api.del(`/appointments/${confirm.id}`), { ok: 'تم الحذف' }).then(() => { setConfirm(null); reload(); }).catch(() => {})} />
+        onConfirm={() => run(() => api.del(`/appointments/${confirm.id}`), { ok: 'تم الحذف' }).then((r) => { waitlistToast(toast, r); setConfirm(null); reload(); setWlKey((k) => k + 1); }).catch(() => {})} />
+
+      <div id="waitlist-panel"><WaitlistPanel key={wlKey} canWrite={canWrite} highlight={wlFocus} onChanged={reload} /></div>
+
+      <AppointmentDetails open={!!details} appt={details?.appt ? (items.find((i) => i.id === details.appt.id) || details.appt) : null} autoCall={!!details?.autoCall}
+        onClose={() => setDetails(null)} onChanged={() => { reload(); setWlKey((k) => k + 1); }} />
     </div>
   );
 }

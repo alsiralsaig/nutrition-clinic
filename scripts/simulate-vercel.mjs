@@ -73,6 +73,14 @@ const deep3 = await j('GET', '/api/reports/weight-progress/1', null, t);
 check('مسار بثلاثة مقاطع /api/patients/1/profile', deep1.status === 200, `status=${deep1.status} ${JSON.stringify(deep1.json).slice(0,120)}`);
 check('مسار بمقطعَين /api/dashboard/summary', deep2.status === 200, `status=${deep2.status}`);
 check('تقرير /api/reports/weight-progress/1', deep3.status === 200, `status=${deep3.status}`);
+// المرحلة D: بوابة المريض عبر نفس الدالة — إصدار QR ثم دخول به ثم ملف المريض
+const acc = await j('POST', '/api/patients/1/portal-access', {}, t);
+const qrLogin = acc.json?.url ? await j('POST', '/api/portal/auth/qr', { token: acc.json.url.split('t=')[1] }) : { status: 0 };
+const pme = qrLogin.json?.token ? await j('GET', '/api/portal/me', null, qrLogin.json.token) : { status: 0 };
+const staffWithPatient = qrLogin.json?.token ? await j('GET', '/api/patients', null, qrLogin.json.token) : { status: 0 };
+check('بوابة المريض عبر الدالة: QR → دخول → /api/portal/me (والتوكن لا يفتح بيانات العيادة)',
+  acc.status === 201 && qrLogin.status === 200 && pme.status === 200 && pme.json?.patient?.id === 1 && staffWithPatient.status === 403,
+  `acc=${acc.status} qr=${qrLogin.status} me=${pme.status} staff=${staffWithPatient.status}`);
 const doc = await j('GET', '/api/openapi.json');
 check('ملف التوثيق متاح تحت /api/openapi.json', doc.status === 200 && !!doc.json?.openapi, `status=${doc.status}`);
 

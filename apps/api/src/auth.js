@@ -74,6 +74,8 @@ export async function authRequired(req, res, next) {
     if (e instanceof HttpError) return next(e);
     return next(e.name === 'TokenExpiredError' ? authError('انتهت الجلسة، سجّل الدخول من جديد') : authError());
   }
+  // توكن المريض (بوابة المريض) لا يفتح مسارات الموظفين أبداً
+  if (payload.typ === 'patient') return next(new HttpError(403, 'هذا الحساب لبوابة المريض فقط'));
   try {
     const user = await db.get(`SELECT id, username, full_name, role, active FROM users WHERE id = ?`, payload.sub);
     if (!user || !user.active) return next(authError('الحساب موقوف — راجع الإدارة'));
@@ -102,3 +104,31 @@ export async function touchLogin(userId) {
 export const DEFAULT_ADMIN_PASSWORD = 'admin123';
 
 export { TTL };
+
+// ================= بوابة المريض =================
+const PATIENT_TTL = process.env.PATIENT_JWT_TTL || '30d';
+
+/** توكن مريض: مرتبط برمز الدخول (aid) — إلغاء الرمز من العيادة يُسقط الجلسة فوراً */
+export function signPatientToken({ patientId, accessId }) {
+  return jwt.sign({ typ: 'patient', pid: patientId, aid: accessId }, secret(), { expiresIn: PATIENT_TTL });
+}
+
+export async function patientRequired(req, res, next) {
+  const token = readToken(req);
+  if (!token) return next(authError('افتح البوابة بمسح رمز QR الخاص بك'));
+  let payload;
+  try { payload = verifyToken(token); }
+  catch (e) {
+    if (e instanceof HttpError) return next(e);
+    return next(authError(e.name === 'TokenExpiredError' ? 'انتهت الجلسة — امسح رمز QR من جديد' : 'جلسة غير صالحة'));
+  }
+  if (payload.typ !== 'patient') return next(new HttpError(403, 'هذا المسار لبوابة المريض'));
+  try {
+    const row = await db.get(`
+      SELECT a.id AS access_id, a.revoked_at, p.id, p.first_name, p.last_name, p.file_no, p.phone, p.status
+      FROM patient_access a JOIN patients p ON p.id = a.patient_id WHERE a.id = ? AND a.patient_id = ?`, payload.aid, payload.pid);
+    if (!row || row.revoked_at) return next(authError('أُلغي رمز الدخول — اطلب رمزاً جديداً من العيادة'));
+    req.patient = row;
+    next();
+  } catch (e) { next(e); }
+}

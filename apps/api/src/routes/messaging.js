@@ -5,6 +5,7 @@ import { badRequest, notFound, str, wrap, todayISO, nowTimeHM, addDaysISO } from
 import { canWrite, adminOnly } from '../auth.js';
 import { waStatus, sendMessage, appointmentText, dailyText, planText, templateFor, normalizePhone, waLink } from '../whatsapp.js';
 import { dayIndex, buildShoppingList, shoppingListText } from '../nutrition.js';
+import { sweepOffers, cleanupCalls, publicUrl } from '../care.js';
 
 export const router = Router();
 
@@ -167,6 +168,29 @@ router.get('/notifications', wrap(async (req, res) => {
     items.push({ id: `msg-failed-${f.id}`, type: 'message_failed', level: 'high', title: `فشل إرسال واتساب${f.first_name ? `: ${f.first_name} ${f.last_name}` : ''}`,
       body: f.error || 'خطأ غير معروف', link: f.patient_id ? `/patients/${f.patient_id}` : '/settings', at: f.created_at });
   }
+  // المرحلة D: مريض ينتظر في مكالمة فيديو، حجوزات قائمة الانتظار، عروض معلّقة
+  await sweepOffers({ base: publicUrl(req) });
+  const waitingCalls = await db.all(`
+    SELECT c.id, c.appointment_id, c.patient_id, p.first_name, p.last_name FROM call_sessions c JOIN patients p ON p.id=c.patient_id
+    WHERE c.status<>'ended' AND c.patient_seen_at >= to_char((now() AT TIME ZONE 'UTC') - interval '20 seconds','YYYY-MM-DD HH24:MI:SS')
+      AND (c.doctor_seen_at IS NULL OR c.doctor_seen_at < to_char((now() AT TIME ZONE 'UTC') - interval '20 seconds','YYYY-MM-DD HH24:MI:SS'))`);
+  for (const c of waitingCalls) {
+    items.push({ id: `call-wait-${c.id}`, type: 'call_waiting', level: 'high', title: `${c.first_name} ${c.last_name} بانتظارك في المكالمة المرئية`,
+      body: 'افتح الموعد واضغط «بدء المكالمة»', link: `/appointments?call=${c.appointment_id}`, patient_id: c.patient_id, appointment_id: c.appointment_id });
+  }
+  const booked = await db.all(`
+    SELECT o.id, o.slot_date, o.slot_time, o.patient_id, o.responded_at, p.first_name, p.last_name FROM waitlist_offers o JOIN patients p ON p.id=o.patient_id
+    WHERE o.status='accepted' AND o.responded_at >= to_char((now() AT TIME ZONE 'UTC') - interval '24 hours','YYYY-MM-DD HH24:MI:SS') ORDER BY o.id DESC LIMIT 5`);
+  for (const b of booked) {
+    items.push({ id: `wl-booked-${b.id}`, type: 'waitlist_booked', level: 'info', title: `حُجز من قائمة الانتظار: ${b.first_name} ${b.last_name}`,
+      body: `${b.slot_date} الساعة ${b.slot_time}`, link: `/patients/${b.patient_id}`, at: `${b.slot_date} ${b.slot_time}`, patient_id: b.patient_id });
+  }
+  const pendingOffers = (await db.get(`SELECT COUNT(DISTINCT slot_date || slot_time) AS n FROM waitlist_offers WHERE status='pending'`)).n;
+  if (pendingOffers > 0) {
+    items.push({ id: `wl-pending-${pendingOffers}`, type: 'waitlist_pending', level: 'info', title: `${pendingOffers} موعد شاغر معروض على قائمة الانتظار`,
+      body: 'بانتظار تأكيد أحد المرضى — أول من يقبل يحجز', link: '/appointments?waitlist=1' });
+  }
+
   const rank = { high: 0, warn: 1, info: 2 };
   items.sort((a, b) => rank[a.level] - rank[b.level] || String(a.at || '').localeCompare(String(b.at || '')));
   res.json({ now: `${today} ${now}`, today_count: appts.filter((a) => a.date === today).length, tomorrow_count: appts.filter((a) => a.date === tomorrow).length, items });
@@ -211,6 +235,8 @@ export async function runDailyJob({ userId = null, source = 'cron' } = {}) {
       } catch { out.daily_reminders.skipped += 1; }
     }
   }
+  try { out.waitlist = await sweepOffers({ base: publicUrl(null) }); } catch (e) { out.waitlist = { error: e.message }; }
+  try { out.calls = await cleanupCalls(); } catch (e) { out.calls = { error: e.message }; }
   out.finished_at = new Date().toISOString();
   await setSettings({ _cron_last_run: out });
   return out;

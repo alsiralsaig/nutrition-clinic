@@ -18,6 +18,8 @@ import { router as dashboardRoutes } from './routes/dashboard.js';
 import { router as reportRoutes } from './routes/reports.js';
 import { router as systemRoutes } from './routes/system.js';
 import { router as messagingRoutes, runDailyJob } from './routes/messaging.js';
+import { router as careRoutes } from './routes/care.js';
+import { router as portalRoutes } from './routes/portal.js';
 import { ensureSeed, SEED_DEMO } from './seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -51,7 +53,7 @@ app.use(express.json({ limit: '8mb' })); // نسخ احتياطي كبير ال�
 
 // تقييد بسيط مضاد للتخمين على مسارات الدخول
 const loginAttempts = new Map();
-app.use('/api/auth/login', (req, res, next) => {
+const limitLogin = (req, res, next) => {
   const ip = req.ip || 'unknown';
   const rec = loginAttempts.get(ip) || { n: 0, t: Date.now() };
   if (Date.now() - rec.t > 60_000) { rec.n = 0; rec.t = Date.now(); }
@@ -59,7 +61,9 @@ app.use('/api/auth/login', (req, res, next) => {
   rec.n += 1;
   loginAttempts.set(ip, rec);
   next();
-});
+};
+app.use('/api/auth/login', limitLogin);
+app.use('/api/portal/auth', limitLogin);   // دخول المريض بالـ QR/الرمز
 
 // كل مسارات الـ API تنتظر جاهزية القاعدة (الملفات الثابتة لا تنتظر)
 app.use('/api', (req, res, next) => { bootstrap().then(() => next(), next); });
@@ -85,6 +89,8 @@ app.get('/api/health', async (req, res, next) => {
   } catch (e) { next(e); }
 });
 app.use('/api/auth', authRoutes);
+// بوابة المريض: توكن مريض مستقل (لا يفتح مسارات الموظفين، ولا توكن الموظف يفتحها)
+app.use('/api/portal', portalRoutes);
 
 // ---------- المهمة اليومية (Vercel Cron يستدعيها كل صباح — انظر vercel.json) ----------
 // Vercel يرسل «Authorization: Bearer $CRON_SECRET» تلقائياً إن ضُبط المتغير. بدونه نقبل فقط وكيل vercel-cron.
@@ -121,6 +127,7 @@ protectedApi.use('/dashboard', dashboardRoutes);
 protectedApi.use('/reports', reportRoutes);
 protectedApi.use('/', systemRoutes);       // /settings /backup /restore /maintenance
 protectedApi.use('/', messagingRoutes);    // /whatsapp/* /notifications /cron/daily/run
+protectedApi.use('/', careRoutes);         // عادات المريض، QR البوابة، قائمة الانتظار، مكالمات الفيديو
 app.use('/api', protectedApi);
 
 // ---------- واجهة الويب (بعد npm run build) ----------

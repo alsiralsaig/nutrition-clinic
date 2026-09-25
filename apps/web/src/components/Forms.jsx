@@ -146,7 +146,7 @@ export function MeasurementForm({ open, onClose, patient, visitId = null, defaul
 const APPT_EMPTY = { patient_id: '', date: '', time: '', duration_min: 30, visit_type: 'followup', status: 'scheduled', notes: '' };
 
 export function AppointmentForm({ open, onClose, patient, defaultDate, appointment, onSaved }) {
-  const { run } = useApp();
+  const { run, toast } = useApp();
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState(APPT_EMPTY);
   const [patients, setPatients] = useState([]);
@@ -157,10 +157,10 @@ export function AppointmentForm({ open, onClose, patient, defaultDate, appointme
     setForm(appointment ? {
       patient_id: appointment.patient_id || '', date: appointment.date, time: appointment.time,
       duration_min: appointment.duration_min ?? 30, visit_type: appointment.visit_type || 'followup',
-      status: appointment.status || 'scheduled', notes: appointment.notes || '',
+      status: appointment.status || 'scheduled', notes: appointment.notes || '', mode: appointment.mode || 'in_person',
     } : {
       patient_id: patient?.id || '', date: defaultDate || todayISO(), time: '10:00', duration_min: 30,
-      visit_type: 'followup', status: 'scheduled', notes: '',
+      visit_type: 'followup', status: 'scheduled', notes: '', mode: 'in_person',
     });
     if (standalone) api.get('/patients?status=active&limit=300').then((r) => setPatients(r.items || [])).catch(() => {});
   }, [open, appointment, patient, defaultDate, standalone]);
@@ -172,9 +172,10 @@ export function AppointmentForm({ open, onClose, patient, defaultDate, appointme
     setBusy(true);
     const body = { ...form, patient_id: Number(form.patient_id), duration_min: Number(form.duration_min) };
     try {
-      await run(() => appointment?.id ? api.put(`/appointments/${appointment.id}`, body) : api.post('/appointments', body),
+      const r = await run(() => appointment?.id ? api.put(`/appointments/${appointment.id}`, body) : api.post('/appointments', body),
         { ok: appointment?.id ? 'تم تحديث الموعد' : 'تم تسجيل الموعد ✓' });
-      onSaved?.(); onClose();
+      if (r?.waitlist?.offered) toast(`الموعد الشاغر عُرض تلقائياً على ${r.waitlist.offered} من قائمة الانتظار 🔔`, 'good', 6000);
+      onSaved?.(r); onClose();
     } catch { /* toast shown */ } finally { setBusy(false); }
   };
 
@@ -208,6 +209,14 @@ export function AppointmentForm({ open, onClose, patient, defaultDate, appointme
             <option value="cancelled">ملغي</option><option value="no_show">لم يحضر</option>
           </Select></Field>
         </div>
+        <Field label="طريقة الزيارة">
+          <div className="flex gap-1 rounded-xl border border-line bg-sand p-1">
+            {[['in_person', '🏥 حضوري'], ['video', '🎥 استشارة مرئية']].map(([k, l]) => (
+              <button type="button" key={k} onClick={() => setForm((f) => ({ ...f, mode: k }))}
+                className={`flex-1 rounded-lg px-3 py-1.5 text-[12.5px] font-bold ${form.mode === k ? 'bg-surface text-brand-700 shadow-card' : 'text-ink/50'}`}>{l}</button>
+            ))}
+          </div>
+        </Field>
         <Field label="ملاحظات"><Textarea value={form.notes} onChange={set('notes')} className="min-h-[64px]" placeholder="طلب تقرير، تغيير وقت، مراجعة تحاليل…" /></Field>
       </form>
     </Modal>

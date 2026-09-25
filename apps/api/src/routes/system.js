@@ -9,7 +9,8 @@ export const router = Router();
 /** بترتيب الاعتماديات: الأب قبل الابن (الإدخال بهذا الترتيب، والحذف بعكسه) */
 const TABLES = [
   'users', 'patients', 'visits', 'measurements', 'diet_plans', 'diet_meals',
-  'appointments', 'payments', 'message_log', 'audit_log', 'settings',
+  'appointments', 'payments', 'message_log', 'patient_access', 'habit_logs', 'waitlist', 'waitlist_offers',
+  'audit_log', 'settings',
 ];
 const WITH_ID = TABLES.filter((t) => t !== 'settings');
 const KEEP_SNAPSHOTS = 5;

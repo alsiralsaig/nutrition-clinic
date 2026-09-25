@@ -11,6 +11,7 @@ import {
 } from '../components/Smart.jsx';
 import { PatientReportDoc, PlanDoc, WeightReportDoc } from '../components/PrintDocs.jsx';
 import { PrintSheet } from '../components/ui.jsx';
+import { HabitsCard, PortalAccessCard } from '../components/Care.jsx';
 import { Badge, Card, Confirm, Empty, ErrorBox, Icon, MacroBar, Modal, Row, Spinner, Table, Textarea } from '../components/ui.jsx';
 import {
   APPT_STATUS, GENDERS, PATIENT_STATUS, VISIT_TYPES, bmiTone, fmt, initials,
@@ -19,7 +20,7 @@ import {
 
 const TONE = { good: 'text-leaf-600', warn: 'text-sun-600', bad: 'text-clay-600', muted: 'text-ink/40' };
 const SECTIONS = [
-  ['overview', 'نظرة'], ['profile', 'البيانات'], ['measurements', 'القياسات'], ['plan', 'البرنامج الغذائي'],
+  ['overview', 'نظرة'], ['habits', 'العادات والبوابة'], ['profile', 'البيانات'], ['measurements', 'القياسات'], ['plan', 'البرنامج الغذائي'],
   ['visits', 'الزيارات'], ['appointments', 'المواعيد'], ['payments', 'المدفوعات'], ['notes', 'الملاحظات'],
 ];
 
@@ -229,6 +230,12 @@ export default function PatientFile() {
             message="عند تسجيل قياسات زيارة متابعة، حرّك منزلق «الالتزام بالخطة» (0–100%). أو قيّم زيارة سابقة من جدول الزيارات." />
         )}
       </Card>
+
+      {/* ================= العادات اليومية + البوابة ================= */}
+      <div id="sec-habits" className="grid gap-4 xl:grid-cols-[1fr_320px]">
+        <HabitsCard patient={p} canWrite={canWrite} />
+        <PortalAccessCard patient={p} canWrite={canWrite} />
+      </div>
 
       {/* ================= البيانات ================= */}
       <div id="sec-profile" className="grid gap-4 lg:grid-cols-2">

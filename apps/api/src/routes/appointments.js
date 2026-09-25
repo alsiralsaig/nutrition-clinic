@@ -3,6 +3,16 @@ import { Router } from 'express';
 import { db, audit } from '../db.js';
 import { badRequest, conflict, notFound, str, wrap, isDate, isTime, todayISO } from '../lib.js';
 import { canWrite } from '../auth.js';
+import { offerSlot, publicUrl } from '../care.js';
+
+const ACTIVE = ['scheduled', 'confirmed'];
+/** موعد نشط أصبح شاغراً (إلغاء/حذف/تغيير وقت) → يُعرض تلقائياً على قائمة الانتظار */
+async function freed(req, appt) {
+  try {
+    return await offerSlot({ date: appt.date, time: appt.time, duration: appt.duration_min, sourceAppointmentId: appt.id,
+      excludePatientId: appt.patient_id, base: publicUrl(req), userId: req.user?.id ?? null });
+  } catch (e) { console.error('[waitlist]', e.message); return { offered: 0, error: e.message }; }
+}
 
 export const router = Router();
 
@@ -18,6 +28,7 @@ async function normalize(body, existing = {}) {
     visit_type: TYPES.includes(body.visit_type) ? body.visit_type : (existing.visit_type ?? 'followup'),
     status: STATUSES.includes(body.status) ? body.status : (existing.status ?? 'scheduled'),
     room: body.room !== undefined ? str(body.room, 60) : (existing.room ?? null),
+    mode: body.mode !== undefined ? (body.mode === 'video' ? 'video' : 'in_person') : (existing.mode ?? 'in_person'),
     notes: body.notes !== undefined ? str(body.notes, 1000) : (existing.notes ?? null),
   };
   if (!out.patient_id) throw badRequest('patient_id مطلوب');
@@ -77,6 +88,12 @@ router.get('/upcoming', wrap(async (req, res) => {
   res.json({ items });
 }));
 
+router.get('/:id(\\d+)', wrap(async (req, res) => {
+  const a = await db.get(`${SELECT} WHERE a.id = ?`, Number(req.params.id));
+  if (!a) throw notFound('الموعد غير موجود');
+  res.json(a);
+}));
+
 router.post('/', canWrite(), wrap(async (req, res) => {
   const data = await normalize(req.body);
   const clash = await db.get(`
@@ -84,8 +101,8 @@ router.post('/', canWrite(), wrap(async (req, res) => {
   `, data.date, data.time);
   if (clash) throw conflict(`يوجد موعد مسجل بالفعل في ${data.date} ${data.time} — اختر وقتاً آخر`);
   const newId = await db.insert(`
-    INSERT INTO appointments (patient_id, date, time, duration_min, visit_type, status, room, notes, created_by)
-    VALUES (@patient_id, @date, @time, @duration_min, @visit_type, @status, @room, @notes, @created_by)
+    INSERT INTO appointments (patient_id, date, time, duration_min, visit_type, status, room, notes, mode, created_by)
+    VALUES (@patient_id, @date, @time, @duration_min, @visit_type, @status, @room, @notes, @mode, @created_by)
   `, { ...data, created_by: req.user.id });
   await audit({ userId: req.user.id, action: 'appointment.create', entity: 'appointments', entityId: newId });
   res.status(201).json(await db.get(`${SELECT} WHERE a.id = ?`, newId));
@@ -98,10 +115,13 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const data = await normalize(req.body, existing);
   await db.run(`
     UPDATE appointments SET patient_id=@patient_id, date=@date, time=@time, duration_min=@duration_min,
-      visit_type=@visit_type, status=@status, room=@room, notes=@notes WHERE id=@id
+      visit_type=@visit_type, status=@status, room=@room, notes=@notes, mode=@mode WHERE id=@id
   `, { ...data, id });
   await audit({ userId: req.user.id, action: 'appointment.update', entity: 'appointments', entityId: id });
-  res.json(await db.get(`${SELECT} WHERE a.id = ?`, id));
+  const wasActive = ACTIVE.includes(existing.status);
+  const slotFreed = wasActive && (!ACTIVE.includes(data.status) ? data.status === 'cancelled' : (data.date !== existing.date || data.time !== existing.time));
+  const waitlist = slotFreed ? await freed(req, existing) : null;
+  res.json({ ...(await db.get(`${SELECT} WHERE a.id = ?`, id)), waitlist });
 }));
 
 /** تغيير الحالة فقط (زر سريع في جدول اليوم) */
@@ -121,13 +141,16 @@ router.post('/:id(\\d+)/status', canWrite(), wrap(async (req, res) => {
     }
     await audit({ userId: req.user.id, action: 'appointment.status', entity: 'appointments', entityId: id, detail: { status } });
   });
-  res.json(await db.get(`${SELECT} WHERE a.id = ?`, id));
+  const waitlist = status === 'cancelled' && ACTIVE.includes(existing.status) ? await freed(req, existing) : null;
+  res.json({ ...(await db.get(`${SELECT} WHERE a.id = ?`, id)), waitlist });
 }));
 
 router.delete('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!(await db.get(`SELECT id FROM appointments WHERE id=?`, id))) throw notFound();
+  const existing = await db.get(`SELECT * FROM appointments WHERE id=?`, id);
+  if (!existing) throw notFound();
   await db.run(`DELETE FROM appointments WHERE id=?`, id);
   await audit({ userId: req.user.id, action: 'appointment.delete', entity: 'appointments', entityId: id });
-  res.json({ deleted: true, id });
+  const waitlist = ACTIVE.includes(existing.status) ? await freed(req, existing) : null;
+  res.json({ deleted: true, id, waitlist });
 }));
