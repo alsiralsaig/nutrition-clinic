@@ -54,7 +54,7 @@ export default function Plans() {
         actions={
           <>
             <div className="relative">
-              <Icon.search className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-600" />
+              <Icon.search className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-brand-600" />
               <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="مريض أو ملف أو عنوان" className="!w-56 !py-2 !text-[12.5px] ps-8" />
             </div>
             <Select value={status} onChange={(e) => setStatus(e.target.value)} placeholder="كل الحالات" className="!w-32 !py-2 !text-[12.5px]">
@@ -66,7 +66,7 @@ export default function Plans() {
           <Empty icon="🍽️" title={q || status ? 'لا برامج مطابقة' : 'لا توجد برامج غذائية بعد'}
             message="افتح ملف المريض ثم أنشئ برنامجه — أو عدّل برنامجاً موجوداً من هنا." />
         ) : (
-          <Table head={['المريض', 'البرنامج', 'الفترة', 'سعرات', 'وجبات', 'التوزيع', 'الحالة', '']}>
+          <Table head={['المريض', 'البرنامج', 'الفترة', 'سعرات/يوم', 'وجبات', 'التوزيع', 'الحالة', '']}>
             {data.items.map((p) => (
               <tr key={p.id} className="group">
                 <td>
@@ -78,7 +78,7 @@ export default function Plans() {
                 <td className="max-w-[220px]"><p className="truncate font-bold">{p.title}</p></td>
                 <td className="whitespace-nowrap text-[12px] text-ink/60 tnum">{p.start_date ? shortDate(p.start_date) : '—'} ← {p.end_date ? shortDate(p.end_date) : 'مفتوح'}</td>
                 <td className="tnum font-extrabold text-brand-700">{fmt(p.kcal_total, 0)}</td>
-                <td className="tnum text-ink/55">{p.meals_count}</td>
+                <td className="tnum text-ink/55">{p.meals_count}{p.days_count > 0 && <Badge tone="info" className="ms-1.5">أسبوعية · {p.days_count} أيام</Badge>}</td>
                 <td className="w-[150px]"><PlanTotals planId={p.id} /></td>
                 <td><Badge tone={STATUS[p.status]?.[1]}>{STATUS[p.status]?.[0]}</Badge></td>
                 <td className="row-actions">

@@ -1,9 +1,11 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import arabicI18n from './babel-plugin-arabic-i18n.js';
 
 // المنفذ 5173 للواجهة، وكل طلب /api يُمرَّر لخادم التعبير على 4000
 export default defineConfig({
-  plugins: [react()],
+  // الإضافة تلف النصوص العربية بدالة الترجمة (English) — انظر babel-plugin-arabic-i18n.js
+  plugins: [react({ babel: { plugins: [arabicI18n] } })],
   base: './',
   server: {
     host: '0.0.0.0',

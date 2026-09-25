@@ -1,5 +1,21 @@
 // عميل REST موحّد — نفس الدوال يستعملها تطبيق الموبايل منطقياً (JWT + JSON)
+import { currentLang } from './i18n.js';
+
 const TOKEN_KEY = 'clinic.token';
+
+/**
+ * في الواجهة الإنجليزية: تسميات الخادم الثابتة (تصنيف BMI، فئات قائمة التسوق، نصائح المولّد…)
+ * تُترجم من القاموس. البيانات المُدخلة (أسماء، وجبات، ملاحظات) لا تُلمس.
+ */
+const LABEL_KEY = /(label|category|advice|warnings|level_name)$/;
+function translateLabels(v, key = '') {
+  if (Array.isArray(v)) return v.map((x) => translateLabels(x, key));
+  if (v && typeof v === 'object') {
+    for (const k of Object.keys(v)) v[k] = translateLabels(v[k], k);
+    return v;
+  }
+  return typeof v === 'string' && LABEL_KEY.test(key) ? __t(v) : v;
+}
 
 export const tokenStore = {
   get: () => localStorage.getItem(TOKEN_KEY) || '',
@@ -34,8 +50,8 @@ async function request(method, path, body, { raw = false } = {}) {
   const text = await res.text();
   let payload = null;
   try { payload = text ? JSON.parse(text) : null; } catch { payload = { error: text }; }
-  if (!res.ok) throw new ApiError(payload?.error || `خطأ ${res.status}`, res.status, payload);
-  return payload;
+  if (!res.ok) throw new ApiError(payload?.error ? __t(payload.error) : `خطأ ${res.status}`, res.status, payload);
+  return currentLang() === 'en' ? translateLabels(payload) : payload;
 }
 
 export const api = {

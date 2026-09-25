@@ -63,10 +63,10 @@ export default function Appointments() {
           <>
             <div className="flex items-center gap-1 rounded-xl border border-line bg-sand p-1">
               {[['day', 'اليوم'], ['range', 'الأسبوع']].map(([k, l]) => (
-                <button key={k} onClick={() => setMode(k)} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-bold transition ${mode === k ? 'bg-white text-brand-700 shadow-card' : 'text-ink/50'}`}>{l}</button>
+                <button key={k} onClick={() => setMode(k)} className={`rounded-lg px-2.5 py-1.5 text-[12px] font-bold transition ${mode === k ? 'bg-surface text-brand-700 shadow-card' : 'text-ink/50'}`}>{l}</button>
               ))}
             </div>
-            <div className="flex items-center gap-1 rounded-xl border border-line bg-white p-1">
+            <div className="ltr:flex-row-reverse flex items-center gap-1 rounded-xl border border-line bg-surface p-1">
               <button className="btn-ghost btn-sm !border-0 !px-2" onClick={() => setDate((d) => addDays(d, mode === 'day' ? 1 : 7))} title="اليوم التالي"><Icon.chev /></button>
               <Input type="date" value={date} onChange={(e) => setDate(e.target.value || todayISO())} className="!border-0 !px-2 !py-1 !text-[12.5px]" />
               <button className="btn-ghost btn-sm !border-0 !px-2" onClick={() => setDate((d) => addDays(d, mode === 'day' ? -1 : -7))} title="اليوم السابق"><Icon.chev className="rotate-180" /></button>
@@ -94,8 +94,8 @@ export default function Appointments() {
               {slots.filter((t) => items.some((a) => a.time === t) || (t >= '09:00' && t <= '20:00')).map((t) => {
                 const at = items.filter((a) => a.time === t);
                 return (
-                  <div key={t} className={`grid items-stretch gap-3 rounded-xl border p-2.5 transition sm:grid-cols-[64px_1fr] ${at.length ? 'border-brand-200 bg-brand-50/40' : 'border-line/60 bg-white'}`}>
-                    <div className="flex flex-col items-center justify-center rounded-lg bg-white py-1.5 text-center shadow-card">
+                  <div key={t} className={`grid items-stretch gap-3 rounded-xl border p-2.5 transition sm:grid-cols-[64px_1fr] ${at.length ? 'border-brand-200 bg-brand-50/40' : 'border-line/60 bg-surface'}`}>
+                    <div className="flex flex-col items-center justify-center rounded-lg bg-surface py-1.5 text-center shadow-card">
                       <span className="tnum text-[13px] font-extrabold text-ink">{t}</span>
                       {!!at.length && <span className="text-[9.5px] font-bold text-brand-600">{at.length} موعد</span>}
                     </div>
@@ -107,7 +107,7 @@ export default function Appointments() {
                         </button>
                       )}
                       {at.map((a) => (
-                        <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-white px-3 py-2.5 shadow-card">
+                        <div key={a.id} className="flex flex-wrap items-center gap-3 rounded-lg border border-line bg-surface px-3 py-2.5 shadow-card">
                           <button onClick={() => nav(`/patients/${a.patient_id}`)} className="min-w-0 flex-1 text-start">
                             <p className="truncate text-[13.5px] font-extrabold hover:text-brand-700">{a.patient_name}</p>
                             <p className="truncate text-[11.5px] font-bold text-ink/45 tnum">{a.file_no} · {a.phone || 'بدون هاتف'} · {a.duration_min} دقيقة</p>

@@ -3,7 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#0f766e" />
+    <meta name="theme-color" content="#0f6360" />
+    <script>
+      // قبل أي رسم: الوضع الداكن واللغة/الاتجاه من تفضيلات المستخدم — لا وميض ولا قفزة اتجاه
+      (function () {
+        try {
+          var t = localStorage.getItem('clinic.theme') || 'system';
+          var d = t === 'dark' || (t === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+          if (d) document.documentElement.classList.add('dark');
+          var l = localStorage.getItem('clinic.lang');
+          if (l === 'en') { document.documentElement.lang = 'en'; document.documentElement.dir = 'ltr'; document.title = 'Nutrition Clinic — Patient Management'; }
+        } catch (e) {}
+      })();
+    </script>
     <title>عيادة التغذية — نظام إدارة المرضى</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />

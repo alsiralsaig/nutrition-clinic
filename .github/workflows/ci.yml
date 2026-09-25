@@ -40,6 +40,9 @@ jobs:
       - name: Build web
         run: npm run build
 
+      - name: تغطية الترجمة الإنجليزية (كل نص عربي له ترجمة)
+        run: node apps/web/i18n-extract.mjs --check
+
       - name: فحص إعداد Vercel (جسور /api + لا بقايا SQLite)
         run: npm run deploy:check
 

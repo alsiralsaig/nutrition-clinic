@@ -4,6 +4,9 @@ import { useApp, useLoader } from '../app-context.jsx';
 import { api, readBackupFile, saveBackupJson } from '../api.js';
 import { Badge, Card, Confirm, Field, Icon, Input, Modal, Select, Spinner, Table, Textarea, Toggle } from '../components/ui.jsx';
 import { ROLES, dateTime } from '../format.js';
+import { WaIcon } from '../components/Smart.jsx';
+import { useTheme } from '../theme.jsx';
+import { currentLang, setLang } from '../i18n.js';
 
 export default function Settings() {
   const { run, user, toast, setUser } = useApp();
@@ -32,13 +35,15 @@ export default function Settings() {
     ['clinic', 'بيانات العيادة', Icon.gear],
     ['security', 'المستخدمون والصلاحيات', Icon.shield],
     ['backup', 'النسخ الاحتياطي', Icon.db],
+    ['messaging', 'واتساب والتذكيرات', WaIcon],
+    ['appearance', 'المظهر واللغة', Icon.dash],
     ['mobile', 'تطبيق الموبايل', Icon.phone],
     ['audit', 'سجل التدقيق', Icon.clock],
   ];
 
   return (
     <div className="grid gap-4">
-      <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-white p-1">
+      <div className="flex flex-wrap gap-1 rounded-xl border border-line bg-surface p-1">
         {TABS.map(([k, l, Ic]) => (
           <button key={k} onClick={() => setTab(k)}
             className={`flex items-center gap-2 rounded-lg px-3.5 py-2 text-[12.5px] font-bold transition ${tab === k ? 'bg-brand-700 text-white shadow-card' : 'text-ink/55 hover:bg-brand-50 hover:text-brand-700'}`}>
@@ -147,6 +152,8 @@ export default function Settings() {
       )}
 
       {tab === 'mobile' && <MobileTab />}
+      {tab === 'messaging' && <MessagingTab data={data} isAdmin={isAdmin} reload={reload} />}
+      {tab === 'appearance' && <AppearanceTab />}
 
       {tab === 'audit' && (
         <Card title="سجل التدقيق" subtitle="آخر 40 عملية على النظام" icon={<Icon.clock />} pad={false}>
@@ -363,7 +370,7 @@ function MobileTab() {
       <div className="grid gap-4">
         <Card title="عنوان الخادم" icon={<Icon.db />}>
           <p className="muted">اكتبه في إعداد التطبيق (مع HTTPS في الإنتاج):</p>
-          <code className="mt-2 block break-all rounded-xl bg-ink px-3 py-2.5 text-[12px] font-bold text-white" dir="ltr">{origin}/api</code>
+          <code className="mt-2 block break-all rounded-xl bg-[#1c2b2a] px-3 py-2.5 text-[12px] font-bold text-white" dir="ltr">{origin}/api</code>
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(`${origin}/api`).then(() => toast('تم نسخ عنوان الـ API', 'good')).catch(() => toast('انسخ العنوان يدوياً', 'warn'))}><Icon.copy /> نسخ</button>
             <a className="btn-soft btn-sm" href="/api/openapi.json" target="_blank" rel="noreferrer"><Icon.pdf /> openapi.json</a>
@@ -385,6 +392,142 @@ function MobileTab() {
           </ol>
         </Card>
       </div>
+    </div>
+  );
+}
+
+/* ------------------ واتساب والتذكيرات ------------------ */
+const KIND_LABEL = { appointment_reminder: 'تذكير موعد', daily_reminder: 'تذكير يومي', plan: 'خطة', shopping_list: 'قائمة تسوق', custom: 'رسالة', test: 'تجربة' };
+const STATUS_TONE = { sent: ['أُرسلت', 'good'], link: ['رابط wa.me', 'info'], failed: ['فشلت', 'bad'], skipped: ['تخطّي', 'warn'] };
+
+function MessagingTab({ data, isAdmin, reload }) {
+  const { run, toast } = useApp();
+  const [status, setStatus] = useState(null);
+  const [log, setLog] = useState([]);
+  const [phone, setPhone] = useState('');
+  const [cc, setCc] = useState('249');
+  const [flags, setFlags] = useState({ appt: true, daily: true });
+  const [lastRun, setLastRun] = useState(null);
+
+  const load = () => {
+    api.get('/whatsapp/status').then((r) => { setStatus(r); setCc(r.country_code || '249'); setLastRun(r.cron_last_run); }).catch(() => {});
+    api.get('/whatsapp/log?limit=60').then((r) => setLog(r.items || [])).catch(() => {});
+  };
+  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    setFlags({ appt: data.settings['clinic.reminders_enabled'] !== false, daily: data.settings['clinic.daily_reminder_enabled'] !== false });
+  }, [data]);
+
+  const saveSettings = (patch) => run(() => api.put('/settings', patch), { ok: 'تم الحفظ' }).then(() => { reload(); load(); }).catch(() => {});
+  const test = () => run(() => api.post('/whatsapp/test', { phone })).then((r) => {
+    if (r.status === 'link' && r.link) { window.open(r.link, '_blank'); toast('بدون مفاتيح API: فُتح wa.me للتجربة', 'info'); }
+    else toast(r.status === 'sent' ? 'أُرسلت الرسالة التجريبية ✓' : (r.error || r.status), r.status === 'sent' ? 'good' : 'warn');
+    load();
+  }).catch(() => load());
+  const runNow = () => run(() => api.post('/cron/daily/run', {}), { ok: 'نُفّذت مهمة التذكيرات' }).then((r) => { setLastRun(r); load(); }).catch(() => {});
+
+  const counts = (o) => (o ? `أُرسل ${o.sent} · روابط ${o.link} · فشل ${o.failed}${o.skipped ? ` · تخطّي ${o.skipped}` : ''}` : '—');
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+      <div className="grid content-start gap-4">
+        <Card title="حالة الربط مع WhatsApp Cloud API" icon={<WaIcon />}
+          actions={status && <Badge tone={status.configured ? (status.dry_run ? 'warn' : 'good') : 'info'}>{status.configured ? (status.dry_run ? 'وضع تجريبي' : 'مربوط — إرسال آلي') : 'غير مربوط — روابط wa.me'}</Badge>}>
+          {!status ? <Spinner /> : (
+            <div className="grid gap-3">
+              <dl className="grid gap-x-6 sm:grid-cols-2">
+                {[['المزوّد', status.provider], ['رقم الإرسال (Phone ID)', status.phone_id || '—'], ['قالب تذكير الموعد', status.templates?.appointment || '— (نص حر)'], ['قالب التذكير اليومي', status.templates?.daily || '— (نص حر)'], ['لغة القوالب', status.templates?.lang || '—']].map(([l, v]) => (
+                  <div key={l} className="flex items-baseline justify-between gap-3 border-b border-dashed border-line/80 py-2"><dt className="text-[12.5px] font-bold text-ink/55">{l}</dt><dd className="text-[13px] font-bold" dir="ltr">{v}</dd></div>
+                ))}
+              </dl>
+              {!status.configured && (
+                <div className="rounded-xl border border-dashed border-brand-300 bg-brand-50/60 p-3 text-[12.5px] font-bold leading-6 text-brand-800">
+                  للإرسال الآلي أضف في Vercel ← Settings ← Environment Variables:
+                  <code className="mx-1 rounded bg-surface px-1.5" dir="ltr">WHATSAPP_TOKEN</code> و
+                  <code className="mx-1 rounded bg-surface px-1.5" dir="ltr">WHATSAPP_PHONE_ID</code>
+                  (من Meta for Developers ← WhatsApp)، ثم أعد النشر. وحتى ذلك الحين تعمل كل أزرار الإرسال عبر روابط wa.me.
+                </div>
+              )}
+              {isAdmin && (
+                <div className="flex flex-wrap items-end gap-2">
+                  <Field label="رقم لتجربة الإرسال" className="min-w-[200px] flex-1"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="0912345678" dir="ltr" inputMode="tel" /></Field>
+                  <button className="btn bg-[#1f9d55] text-white hover:bg-[#188247]" disabled={!phone.trim()} onClick={test}><WaIcon /> رسالة تجريبية</button>
+                </div>
+              )}
+            </div>
+          )}
+        </Card>
+
+        <Card title="التذكيرات التلقائية" subtitle="مهمة يومية على Vercel Cron الساعة 7:00 صباحاً بتوقيت الخرطوم (05:00 UTC)" icon={<Icon.clock />}
+          actions={isAdmin && <button className="btn-soft btn-sm" onClick={runNow}><Icon.refresh /> تشغيل الآن</button>}>
+          <div className="grid gap-3">
+            <div className="grid gap-2.5">
+              <Toggle checked={flags.appt} onChange={(v) => { setFlags((f) => ({ ...f, appt: v })); if (isAdmin) saveSettings({ 'clinic.reminders_enabled': v }); }} label="تذكير المرضى بمواعيد اليوم وغداً (مرة لكل موعد)" />
+              <Toggle checked={flags.daily} onChange={(v) => { setFlags((f) => ({ ...f, daily: v })); if (isAdmin) saveSettings({ 'clinic.daily_reminder_enabled': v }); }} label="تذكير يومي بوجبات الخطة (للمشتركين من ملف المريض)" />
+            </div>
+            <div className="flex flex-wrap items-end gap-2">
+              <Field label="رمز الدولة لأرقام الهواتف المحلية" hint="السودان 249 · مصر 20 · السعودية 966" className="w-56">
+                <Input value={cc} onChange={(e) => setCc(e.target.value.replace(/\D/g, ''))} dir="ltr" disabled={!isAdmin} />
+              </Field>
+              {isAdmin && cc !== (status?.country_code || '249') && <button className="btn-primary btn-sm mb-1" onClick={() => saveSettings({ 'clinic.country_code': cc })}><Icon.check /> حفظ</button>}
+            </div>
+            <div className="rounded-xl border border-line bg-sand/60 p-3 text-[12.5px]">
+              <p className="font-extrabold text-ink/70">آخر تشغيل</p>
+              {lastRun ? (
+                <div className="mt-1 grid gap-0.5 font-bold text-ink/60">
+                  <p className="tnum">{lastRun.date} · {lastRun.source === 'manual' ? 'يدوي' : 'تلقائي'} · {lastRun.finished_at ? dateTime(lastRun.finished_at) : ''}</p>
+                  <p>المواعيد: <span className="tnum">{counts(lastRun.appointment_reminders)}</span></p>
+                  <p>اليومي: <span className="tnum">{counts(lastRun.daily_reminders)}</span></p>
+                </div>
+              ) : <p className="muted mt-1">لم تُشغَّل بعد.</p>}
+              <p className="muted mt-2 leading-6">بدون مفاتيح API لا يمكن الإرسال في الخلفية؛ تظهر التذكيرات في جرس التنبيهات 🔔 مع زر «إرسال التذكير» بضغطة.</p>
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <Card title="سجل الرسائل" subtitle="آخر 60 رسالة" icon={<Icon.clock />} pad={false}
+        actions={<button className="btn-ghost btn-sm" onClick={load}><Icon.refresh /></button>}>
+        {log.length === 0 ? <p className="p-8 text-center text-[13px] font-bold text-ink/45">لا رسائل بعد.</p> : (
+          <Table head={['الوقت', 'المريض', 'النوع', 'الحالة', 'الرقم']}>
+            {log.map((m) => (
+              <tr key={m.id} title={m.error || m.body || ''}>
+                <td className="whitespace-nowrap text-[12px] tnum">{dateTime(m.created_at + 'Z')}</td>
+                <td className="font-bold">{m.first_name ? `${m.first_name} ${m.last_name}` : '—'}</td>
+                <td className="text-[12.5px]">{KIND_LABEL[m.kind] || m.kind}</td>
+                <td><Badge tone={STATUS_TONE[m.status]?.[1]}>{STATUS_TONE[m.status]?.[0] || m.status}</Badge>{m.error && <p className="mt-0.5 max-w-[200px] truncate text-[11px] text-clay-600">{m.error}</p>}</td>
+                <td className="tnum text-[12px] text-ink/55" dir="ltr">{m.to_phone || '—'}</td>
+              </tr>
+            ))}
+          </Table>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/* ------------------ المظهر واللغة ------------------ */
+function AppearanceTab() {
+  const { mode, setMode } = useTheme();
+  const lang = currentLang();
+  const opt = (active) => `flex flex-1 flex-col items-center gap-2 rounded-xl border p-4 text-[13px] font-extrabold transition ${active ? 'border-brand-400 bg-brand-50 text-brand-800 shadow-card' : 'border-line bg-surface text-ink/60 hover:border-brand-300'}`;
+  return (
+    <div className="grid gap-4 lg:grid-cols-2">
+      <Card title="الوضع" subtitle="يُحفظ على هذا الجهاز · الطباعة دائماً بالألوان الفاتحة" icon={<Icon.dash />}>
+        <div className="flex gap-2">
+          {[['light', 'فاتح', '☀️'], ['dark', 'داكن', '🌙'], ['system', 'حسب الجهاز', '💻']].map(([k, l, e]) => (
+            <button key={k} className={opt(mode === k)} onClick={() => setMode(k)} data-theme-opt={k}><span className="text-[22px]">{e}</span>{l}</button>
+          ))}
+        </div>
+      </Card>
+      <Card title="اللغة" subtitle="تبديل اللغة يعيد تحميل الصفحة" icon={<Icon.users />}>
+        <div className="flex gap-2">
+          {[['ar', 'العربية', 'ع'], ['en', 'English', 'EN']].map(([k, l, e]) => (
+            <button key={k} className={opt(lang === k)} onClick={() => lang !== k && setLang(k)}><span className="text-[20px]">{e}</span>{l}</button>
+          ))}
+        </div>
+        <p className="muted mt-3">البيانات المُدخلة (الأسماء، الوجبات، الملاحظات) تبقى كما كُتبت؛ تتغير الواجهة والتقارير.</p>
+      </Card>
     </div>
   );
 }

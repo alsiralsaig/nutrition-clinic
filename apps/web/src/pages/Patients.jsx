@@ -66,7 +66,7 @@ export default function Patients() {
             <div className="hidden items-center gap-1 rounded-xl border border-line bg-sand p-1 sm:flex">
               {[['created', 'الأحدث'], ['name', 'الاسم'], ['file_no', 'رقم الملف']].map(([k, l]) => (
                 <button key={k} onClick={() => patch({ sort: k })}
-                  className={`rounded-lg px-2.5 py-1.5 text-[12px] font-bold transition ${sort === k ? 'bg-white text-brand-700 shadow-card' : 'text-ink/50 hover:text-ink'}`}>{l}</button>
+                  className={`rounded-lg px-2.5 py-1.5 text-[12px] font-bold transition ${sort === k ? 'bg-surface text-brand-700 shadow-card' : 'text-ink/50 hover:text-ink'}`}>{l}</button>
               ))}
             </div>
             {canWrite && <button className="btn-primary btn-sm" onClick={() => setEditing('new')}><Icon.plus /> مريض جديد</button>}
@@ -75,14 +75,14 @@ export default function Patients() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1">
-            <Icon.search className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-brand-600" />
+            <Icon.search className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-brand-600" />
             <Input value={input} onChange={(e) => setInput(e.target.value)} placeholder="ابحث بالاسم أو اللقب أو رقم الملف أو الهاتف…" className="pe-3 ps-10" />
-            {input && <button className="absolute left-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-ink/40 hover:bg-sand hover:text-clay-600" onClick={() => setInput('')}><Icon.close /></button>}
+            {input && <button className="absolute end-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-ink/40 hover:bg-sand hover:text-clay-600" onClick={() => setInput('')}><Icon.close /></button>}
           </div>
           <div className="flex items-center gap-1 rounded-xl border border-line bg-sand p-1">
             {[['', 'الكل'], ['active', 'نشط'], ['inactive', 'متوقف'], ['archived', 'مؤرشف']].map(([k, l]) => (
               <button key={k || 'all'} onClick={() => { patch({ status: k }); setPage(0); }}
-                className={`rounded-lg px-3 py-1.5 text-[12px] font-bold transition ${status === k ? 'bg-white text-brand-700 shadow-card' : 'text-ink/50 hover:text-ink'}`}>{l}</button>
+                className={`rounded-lg px-3 py-1.5 text-[12px] font-bold transition ${status === k ? 'bg-surface text-brand-700 shadow-card' : 'text-ink/50 hover:text-ink'}`}>{l}</button>
             ))}
           </div>
         </div>
@@ -133,7 +133,7 @@ export default function Patients() {
                         <div className="flex gap-1">
                           {canWrite && <button title="تعديل" className="btn-ghost btn-sm !px-2" onClick={() => setEditing(p)}><Icon.pencil /></button>}
                           {canWrite && <button title={user.role === 'admin' ? 'حذف' : 'أرشفة'} className="btn-danger btn-sm !px-2" onClick={() => askDelete(p)}><Icon.trash /></button>}
-                          <button title="الملف" className="btn-ghost btn-sm !px-2" onClick={() => nav(`/patients/${p.id}`)}><Icon.chev className="rotate-180" /></button>
+                          <button title="الملف" className="btn-ghost btn-sm !px-2" onClick={() => nav(`/patients/${p.id}`)}><Icon.chev className="rtl:rotate-180" /></button>
                         </div>
                       </td>
                     </tr>

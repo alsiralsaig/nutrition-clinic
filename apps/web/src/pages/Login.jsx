@@ -37,7 +37,7 @@ export default function Login() {
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
       {/* لوحة التعريف */}
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-brand-600 p-10 text-white lg:flex">
+      <div className="relative hidden flex-col justify-between overflow-hidden brand-gradient-br p-10 text-white lg:flex">
         <div className="absolute -left-24 -top-24 h-72 w-72 rounded-full bg-white/10 blur-2xl" />
         <div className="absolute bottom-[-6rem] right-[-4rem] h-80 w-80 rounded-full bg-leaf-500/25 blur-3xl" />
         <div className="relative flex items-center gap-3">
@@ -90,7 +90,7 @@ export default function Login() {
                 <Input type={show ? 'text' : 'password'} autoComplete="current-password" value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="••••••••" className="pe-11" />
                 <button type="button" onClick={() => setShow((s) => !s)}
-                  className="absolute inset-y-0 left-2 my-auto h-7 rounded-md px-2 text-[11.5px] font-extrabold text-brand-700 hover:bg-brand-50">
+                  className="absolute inset-y-0 end-2 my-auto h-7 rounded-md px-2 text-[11.5px] font-extrabold text-brand-700 hover:bg-brand-50">
                   {show ? 'إخفاء' : 'إظهار'}
                 </button>
               </div>
@@ -112,7 +112,7 @@ export default function Login() {
             <p className="mb-1 font-extrabold text-ink/70">حسابات التجربة:</p>
             {[['admin', 'admin123', 'مدير — كل الصلاحيات'], ['doctor', 'doctor123', 'أخصائي — تعديل دون إدارة المستخدمين'], ['reception', 'reception123', 'مشاهدة فقط']].map(([u, p, d]) => (
               <button type="button" key={u} onClick={() => setForm({ username: u, password: p })}
-                className="flex w-full items-center justify-between rounded-lg px-2 py-1 text-start hover:bg-white">
+                className="flex w-full items-center justify-between rounded-lg px-2 py-1 text-start hover:bg-surface">
                 <span className="tnum font-bold">{u} / {p}</span>
                 <span>{d}</span>
               </button>

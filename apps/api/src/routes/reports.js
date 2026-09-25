@@ -118,7 +118,16 @@ router.get('/revenue', wrap(async (req, res) => {
     acc[k] = (acc[k] || 0) + r.amount;
     return acc;
   }, {})).map(([month, total]) => ({ month, total: Math.round(total * 100) / 100 })).sort((a, b) => a.month.localeCompare(b.month));
+  // شهر × خدمة (أعمدة مكدّسة): [{ month, total, 'استشارة': 1200, ... }]
+  const services = group('service').map((x) => x.key);
+  const byMonthService = byMonth.map(({ month, total }) => {
+    const row = { month, total };
+    for (const sv of services) row[sv] = 0;
+    for (const r of valid) if (r.date.slice(0, 7) === month) row[r.service || 'غير محدد'] = Math.round((row[r.service || 'غير محدد'] + r.amount) * 100) / 100;
+    return row;
+  });
   res.json({
+    services, by_month_service: byMonthService,
     from, to, currency: await getSetting('clinic.currency', 'SDG'),
     gross: Math.round(valid.reduce((s, r) => s + r.amount, 0) * 100) / 100,
     voided_count: rows.length - valid.length,

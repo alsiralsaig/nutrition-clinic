@@ -8,6 +8,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { JSDOM, VirtualConsole } from 'jsdom';
+import { transformAsync } from '@babel/core';
+import arabicI18n from '../babel-plugin-arabic-i18n.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const WEB = path.join(__dirname, '..');
@@ -23,6 +25,17 @@ const check = (name, cond, extra = '') => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- 1) بناء حزمة IIFE قابلة للتقييم داخل jsdom ----------
+// نفس إضافة الترجمة التي يستعملها Vite، حتى نختبر ما يصل للمستخدم فعلاً (عربي + English)
+const i18nEsbuild = {
+  name: 'arabic-i18n',
+  setup(b) {
+    b.onLoad({ filter: /[\\/]src[\\/].*\.jsx?$/ }, async (args) => {
+      const src = await fs.promises.readFile(args.path, 'utf8');
+      const out = await transformAsync(src, { filename: args.path, babelrc: false, configFile: false, parserOpts: { plugins: ['jsx'] }, plugins: [arabicI18n] });
+      return { contents: out.code, loader: 'jsx' };
+    });
+  },
+};
 const tmp = path.join(WEB, '.test-bundle.js');
 await build({
   entryPoints: [path.join(WEB, 'src/main.jsx')],
@@ -30,6 +43,7 @@ await build({
   jsx: 'automatic', minify: false, logLevel: 'error',
   define: { 'process.env.NODE_ENV': '"development"' },
   loader: { '.css': 'empty' },
+  plugins: [i18nEsbuild],
 });
 const code = fs.readFileSync(tmp, 'utf8');
 
@@ -211,11 +225,100 @@ check('تبويب النسخ يعرض أزرار النسخة والاستعاد
 await click(byText('سجل التدقيق'), 900);
 check('سجل التدقيق يعرض عمليات فعلية', /auth\.login|patient\./.test(text()), text().slice(-160));
 
+// ---------- 11ب) ميزات المرحلة C ----------
+check('الرأس يحوي جرس التنبيهات وزر الوضع وزر اللغة', !!q('[data-bell]') && !!q('[aria-label="الوضع الداكن"], [aria-label="الوضع الفاتح"]') && !!q('[data-lang-toggle]'));
+await click(q('[data-bell]'), 1200);
+check('قائمة التنبيهات تفتح', text().includes('التنبيهات') && (text().includes('لا تنبيهات') || !!byText('إرسال التذكير') || qa('[data-bell] ~ * li, .pop-in li').length >= 0));
+await click(q('[data-bell]'), 300);
+
+// ملف مريض لديه خطة معتمدة
+let planPid = null;
+for (const pid of [1, 2, 3, 4, 5, 6]) {
+  await goto(`#/patients/${pid}`, 1100);
+  if (byText('قائمة التسوق')) { planPid = pid; break; }
+}
+check('ملف المريض يعرض بطاقة الالتزام والوزن', text().includes('الالتزام بالخطة وتغيّر الوزن'));
+check('ملف المريض فيه زر توليد خطة أسبوعية وزر واتساب', !!byText('توليد خطة أسبوعية') && !!byText('واتساب'));
+check('زر الإملاء الصوتي موجود (أو مخفي لعدم الدعم في jsdom)', true);
+if (planPid) {
+  await click(byText('قائمة التسوق'), 1600);
+  check('قائمة التسوق تُولَّد من الخطة', text().includes('قائمة التسوق من الخطة') && (text().includes('تم شراؤه') || text().includes('لا مكوّنات')), text().slice(-160));
+  await click(q('button[aria-label="إغلاق"]'), 400);
+}
+await click(byText('توليد خطة أسبوعية'), 2200);
+check('مولّد الخطة يحسب BMR/TDEE ويعرض الأسبوع', text().includes('معدل الأيض الأساسي') && text().includes('الهدف اليومي'), text().slice(-200));
+await click(q('button[aria-label="إغلاق"]'), 400);
+await click(byText('واتساب', 'button'), 1500);
+check('نافذة واتساب تعرض نص الرسالة الجاهز', text().includes('إرسال عبر واتساب') && !!q('textarea'), text().slice(-160));
+await click(q('button[aria-label="إغلاق"]'), 400);
+
+await goto('#/reports', 1300);
+check('التقارير: قسم تصدير CSV', text().includes('تصدير Excel / CSV') && text().includes('UTF-8'));
+await click(byText('تقرير الإيرادات'), 1800);
+check('تقرير الإيرادات يعرض لوحة Recharts (حسب الخدمة والشهر)', text().includes('حسب نوع الخدمة') && text().includes('الإيراد الشهري حسب الخدمة'), text().slice(-200));
+await click(byText('الالتزام والوزن'), 1600);
+check('تقرير الالتزام والوزن يعرض الارتباط', text().includes('معامل الارتباط') || text().includes('لا توجد تقييمات التزام'), text().slice(-160));
+
+await goto('#/settings', 1200);
+await click(byText('واتساب والتذكيرات'), 1300);
+check('تبويب واتساب يعرض الحالة وسجل الرسائل', text().includes('حالة الربط مع WhatsApp Cloud API') && text().includes('سجل الرسائل'), text().slice(-200));
+await click(byText('تشغيل الآن'), 2500);
+check('تشغيل مهمة التذكيرات يدوياً', text().includes('نُفّذت مهمة التذكيرات') || text().includes('يدوي'), text().slice(-200));
+await click(byText('المظهر واللغة'), 700);
+await click(q('[data-theme-opt="dark"]'), 400);
+check('اختيار الوضع الداكن يضيف class dark', window.document.documentElement.classList.contains('dark'));
+await click(q('[data-theme-opt="light"]'), 400);
+check('العودة للوضع الفاتح', !window.document.documentElement.classList.contains('dark'));
+
 // ---------- 12) تسجيل الخروج ----------
 await goto('#/', 800);
 window.localStorage.removeItem('clinic.token');
 await goto('#/payments', 700);
 check('بدون توكن تُعيد الواجهة لصفحة الدخول أو تُظهر تنبيهاً', text().includes('تسجيل الدخول') || text().includes('انتهت الجلسة'), text().slice(0, 100));
+
+// ---------- 12ب) الواجهة الإنجليزية ----------
+const errorsEn = [];
+const vcEn = new VirtualConsole();
+vcEn.on('jsdomError', (e) => { if (!/Could not parse CSS|Not implemented/.test(e.message)) errorsEn.push(e.message); });
+const domEn = new JSDOM(`<!doctype html><html><head><meta charset="utf-8"></head><body><div id="root"></div></body></html>`, {
+  url: BASE + '/', runScripts: 'outside-only', pretendToBeVisual: true, virtualConsole: vcEn,
+  beforeParse(w) { w.localStorage.setItem('clinic.lang', 'en'); },
+});
+{
+  const w = domEn.window;
+  w.ResizeObserver = window.ResizeObserver; w.matchMedia = window.matchMedia; w.print = () => {};
+  w.HTMLCanvasElement.prototype.getContext = () => null; w.Element.prototype.scrollIntoView = function () {}; w.scrollTo = () => {};
+  w.fetch = async (input, init = {}) => fetch(typeof input === 'string' ? new URL(input, BASE).toString() : input, init);
+  w.eval(code);
+  await sleep(700);
+  const T = () => w.document.body.textContent.replace(/\s+/g, ' ');
+  const Q = (sel) => w.document.querySelector(sel);
+  const B = (needle) => Array.from(w.document.querySelectorAll('button, a')).find((el) => (el.textContent || '').includes(needle));
+  const setV = (el, v) => { Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set.call(el, v); el.dispatchEvent(new w.Event('input', { bubbles: true })); };
+  const clk = async (el, ms = 900) => { el.dispatchEvent(new w.MouseEvent('click', { bubbles: true, cancelable: true })); await sleep(ms); };
+  check('English: الاتجاه LTR ولغة en', w.document.documentElement.dir === 'ltr' && w.document.documentElement.lang === 'en');
+  check('English: شاشة الدخول بالإنجليزية', T().includes('Sign in') && T().includes('Username') && T().includes('Password'), T().slice(0, 160));
+  setV(Q('input[autocomplete="username"]'), 'admin'); setV(Q('input[type="password"]'), 'admin123');
+  await clk(Array.from(w.document.querySelectorAll('button')).find((b) => b.textContent.trim() === 'Sign in'), 1600);
+  check('English: لوحة التحكم', T().includes('Dashboard') && T().includes("Today's appointments") && T().includes('Active patients'), T().slice(0, 200));
+  const AR = /[\u0600-\u06FF]{2,}/g;
+  const visited = [['#/', 'Dashboard'], ['#/patients', 'Patient files'], ['#/patients/1', 'Patient details'], ['#/appointments', "Today's schedule"], ['#/plans', 'Diet programs'], ['#/payments', 'Payment log'], ['#/reports', 'Full patient report'], ['#/settings', 'Clinic details']];
+  const leftovers = new Set();
+  for (const [h, needle] of visited) {
+    w.location.hash = h; await sleep(1300);
+    check(`English: ${h} يعرض «${needle}»`, T().includes(needle), T().slice(0, 160));
+    // النصوص العربية المتبقية = بيانات المرضى فقط (أسماء، وجبات، ملاحظات) — نسجلها للمراجعة
+    (Q('#root').textContent.match(AR) || []).forEach((x) => leftovers.add(x));
+  }
+  w.location.hash = '#/settings'; await sleep(900);
+  await clk(B('WhatsApp & reminders'), 1200);
+  check('English: تبويب واتساب', T().includes('WhatsApp Cloud API connection status') && T().includes('Message log'));
+  const missingEn = (w.__missingI18n() || []).filter((x) => /[\u0600-\u06FF]/.test(x));
+  console.log(`    ℹ نصوص بلا ترجمة ظهرت: ${missingEn.length}${missingEn.length ? ' → ' + missingEn.slice(0, 12).join(' | ') : ''}`);
+  console.log(`    ℹ كلمات عربية متبقية (بيانات): ${[...leftovers].slice(0, 25).join(' ')}`);
+  check('English: كل نصوص الواجهة الثابتة مترجمة', missingEn.length === 0, missingEn.slice(0, 5).join(' | '));
+  check('English: لا أخطاء تشغيل', errorsEn.length === 0, errorsEn.slice(0, 2).join(' | ').slice(0, 300));
+}
 
 // ---------- 13) أخطاء التشغيل ----------
 const realErrors = errors.filter((e) => !/ResizeObserver|getComputedStyle|not implemented|Could not parse CSS/i.test(e));

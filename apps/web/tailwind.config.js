@@ -1,5 +1,13 @@
-/** ألوان هادئة مناسبة لعيادة تغذية: أخضر مائي + رملي + درجات ناعمة */
+/**
+ * ألوان هادئة مناسبة لعيادة تغذية: أخضر مائي + رملي + درجات ناعمة.
+ * كل لون معرّف كمتغير CSS (قنوات RGB) في styles.css، فيتبدّل الوضع الداكن
+ * لكل المكوّنات دفعة واحدة بتبديل الصنف `dark` على <html> — دون تعديل كل صفحة.
+ */
+const v = (name) => `rgb(var(--c-${name}) / <alpha-value>)`;
+const scale = (name, keys) => Object.fromEntries(keys.map((k) => [k, v(`${name}-${k}`)]));
+
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
@@ -7,21 +15,18 @@ export default {
         sans: ['Tajawal', 'Cairo', 'Segoe UI', 'Tahoma', 'system-ui', 'sans-serif'],
       },
       colors: {
-        sand: '#f6f4ef',
-        ink: '#1c2b2a',
-        line: '#e6e1d8',
-        brand: {
-          50: '#effaf8', 100: '#d6f2ee', 200: '#aee5df', 300: '#78d2ca',
-          400: '#43b7ae', 500: '#229a92', 600: '#157c77', 700: '#0f6360',
-          800: '#0e4f4d', 900: '#0d4140',
-        },
-        leaf: { 50: '#f2f9ee', 100: '#e0f1d5', 500: '#5aa843', 600: '#468735' },
-        sun: { 50: '#fef8e9', 100: '#fdecc8', 500: '#d69a19', 600: '#b47d0c' },
-        clay: { 50: '#fdf2ef', 100: '#fbe1da', 500: '#c9604a', 600: '#a94a36' },
+        sand: v('sand'),
+        ink: v('ink'),
+        line: v('line'),
+        surface: v('surface'), // خلفية البطاقات والحقول (أبيض في الفاتح)
+        brand: scale('brand', [50, 100, 200, 300, 400, 500, 600, 700, 800, 900]),
+        leaf: scale('leaf', [50, 100, 500, 600]),
+        sun: scale('sun', [50, 100, 500, 600]),
+        clay: scale('clay', [50, 100, 500, 600]),
       },
       boxShadow: {
-        card: '0 1px 2px rgba(16,44,42,.04), 0 8px 24px -12px rgba(16,44,42,.14)',
-        pop: '0 24px 60px -20px rgba(12,45,43,.35)',
+        card: 'var(--shadow-card)',
+        pop: 'var(--shadow-pop)',
       },
       borderRadius: { xl2: '1.25rem' },
     },

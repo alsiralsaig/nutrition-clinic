@@ -101,13 +101,13 @@ export default function Payments() {
             {METHODS.map((m) => <option key={m} value={m}>{PAY_METHODS[m]}</option>)}
           </Select>
           <div className="relative min-w-[200px] flex-1">
-            <Icon.search className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-brand-600" />
+            <Icon.search className="pointer-events-none absolute start-2.5 top-1/2 -translate-y-1/2 text-brand-600" />
             <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="مريض، ملف، خدمة، أو رقم فاتورة…" className="!py-1.5 !text-[12.5px] ps-8" />
           </div>
           <div className="flex gap-1">
             {[['هذا الشهر', `${todayISO().slice(0, 7)}-01`, todayISO()], ['آخر 30 يوم', null, todayISO()], ['هذه السنة', `${todayISO().slice(0, 4)}-01-01`, todayISO()], ['الكل', '0000-01-01', '9999-12-31']].map(([label, f, t]) => (
               <button key={label} onClick={() => setRange({ from: f || (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d.toISOString().slice(0, 10); })(), to: t })}
-                className="rounded-lg border border-line bg-white px-2.5 py-1.5 text-[11.5px] font-bold text-ink/60 transition hover:border-brand-300 hover:text-brand-700">{label}</button>
+                className="rounded-lg border border-line bg-surface px-2.5 py-1.5 text-[11.5px] font-bold text-ink/60 transition hover:border-brand-300 hover:text-brand-700">{label}</button>
             ))}
           </div>
         </div>

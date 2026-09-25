@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useApp } from '../app-context.jsx';
 import { Field, Icon, Input, Modal, Select, Textarea } from './ui.jsx';
 import { MEAL_SLOTS, PAY_METHODS, VISIT_TYPES, fmt, todayISO } from '../format.js';
+import { AdherencePicker, DAYS, VoiceNoteButton, appendText, todayDow } from './Smart.jsx';
 
 const toNumOrNull = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const previewBmi = (w, h) => (!w || !h ? null : Math.round((w / (h / 100) ** 2) * 10) / 10);
@@ -29,7 +30,15 @@ export function MeasurementForm({ open, onClose, patient, visitId = null, defaul
         measured_on: measurement.measured_on, visit_id: measurement.visit_id || '',
         ...Object.fromEntries(MEAS_KEYS.map((k) => [k, measurement[k] ?? ''])),
         notes: measurement.notes || '', visit_type: measurement.visit_type || 'followup',
+        adherence: null, adherence_notes: '', _adhOrig: null,
       });
+      if (measurement.visit_id) {
+        api.get(`/visits?patient_id=${patient.id}`).then((r) => {
+          setVisits(r.items || []);
+          const v = (r.items || []).find((x) => x.id === measurement.visit_id);
+          if (v) setForm((f) => ({ ...f, adherence: v.adherence ?? null, adherence_notes: v.adherence_notes || '', _adhOrig: v.adherence ?? null }));
+        }).catch(() => {});
+      }
       return;
     }
     setForm({
@@ -37,7 +46,7 @@ export function MeasurementForm({ open, onClose, patient, visitId = null, defaul
       measured_on: defaultDate || todayISO(),
       visit_id: visitId || '',
       weight_kg: '', height_cm: patient?.height_cm ?? '', waist_cm: '', chest_cm: '', hip_cm: '', body_fat_pct: '',
-      notes: '', createVisit: true, visit_type: 'followup',
+      notes: '', createVisit: true, visit_type: 'followup', adherence: null, adherence_notes: '', _adhOrig: null,
     });
     api.get(`/visits?patient_id=${patient.id}`).then((r) => setVisits(r.items || [])).catch(() => setVisits([]));
   }, [open, patient, visitId, defaultDate, measurement]);
@@ -55,13 +64,21 @@ export function MeasurementForm({ open, onClose, patient, visitId = null, defaul
           measured_on: form.measured_on, visit_id: form.visit_id ? Number(form.visit_id) : null,
           ...Object.fromEntries(MEAS_KEYS.map((k) => [k, toNumOrNull(form[k])])), notes: form.notes || null,
         }), { ok: 'تم تحديث القياسات' });
+        if (form.visit_id && (form.adherence !== form._adhOrig || form.adherence_notes)) {
+          await api.put(`/visits/${form.visit_id}`, { adherence: form.adherence, adherence_notes: form.adherence_notes || null }).catch(() => {});
+        }
         onSaved?.(); onClose(); return;
       }
       await run(async () => {
         let vid = form.visit_id ? Number(form.visit_id) : null;
         if (!vid && form.createVisit) {
-          const v = await api.post('/visits', { patient_id: patient.id, visit_date: form.measured_on, visit_type: form.visit_type, reason: form.notes?.slice(0, 200) || null });
+          const v = await api.post('/visits', {
+            patient_id: patient.id, visit_date: form.measured_on, visit_type: form.visit_type, reason: form.notes?.slice(0, 200) || null,
+            adherence: form.adherence, adherence_notes: form.adherence_notes || null,
+          });
           vid = v.id;
+        } else if (vid && form.adherence !== null) {
+          await api.put(`/visits/${vid}`, { adherence: form.adherence, adherence_notes: form.adherence_notes || null });
         }
         return api.post('/measurements', {
           patient_id: patient.id, visit_id: vid, measured_on: form.measured_on,
@@ -109,7 +126,17 @@ export function MeasurementForm({ open, onClose, patient, visitId = null, defaul
             {Object.entries(VISIT_TYPES).map(([v, o]) => <option key={v} value={v}>{o.label}</option>)}
           </Select>}
         </div>
-        <Field label="ملاحظات الزيارة"><Textarea value={form.notes} onChange={set('notes')} placeholder="الالتزام، الشهية، النوم، الحركة، الدورة الشهرية، أي شكوى…" /></Field>
+        {(form.createVisit || form.visit_id) && (
+          <AdherencePicker value={form.adherence} onChange={(v) => setForm((f) => ({ ...f, adherence: v }))}
+            note={form.adherence_notes} onNote={(v) => setForm((f) => ({ ...f, adherence_notes: v }))} />
+        )}
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="label !mb-0">ملاحظات الزيارة</span>
+            <VoiceNoteButton onText={(t) => setForm((f) => ({ ...f, notes: appendText(f.notes, t) }))} />
+          </div>
+          <Textarea value={form.notes} onChange={set('notes')} placeholder="الالتزام، الشهية، النوم، الحركة، الدورة الشهرية، أي شكوى…" />
+        </div>
       </form>
     </Modal>
   );
@@ -263,6 +290,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
   });
   const [meals, setMeals] = useState([]);
   const [foods, setFoods] = useState([]);
+  const [dayView, setDayView] = useState('all'); // all | every | 0..6
 
   useEffect(() => {
     if (!open) return;
@@ -279,15 +307,31 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
         ...m,
         ...Object.fromEntries(['kcal', 'protein_g', 'carbs_g', 'fat_g'].map((k) => [k, m[k] ?? ''])),
         slot_time: m.slot_time ?? '', title: m.title ?? '', items: m.items ?? '', portions: m.portions ?? '',
+        day_of_week: m.day_of_week ?? '',
       }))
       : MEAL_SLOTS.slice(0, 5).map(emptyMeal));
     setFoods([]);
+    setDayView(plan?.meals?.some((m) => m.day_of_week !== null && m.day_of_week !== undefined) ? String(todayDow()) : 'all');
   }, [open, plan]);
 
-  const totals = useMemo(() => meals.reduce((t, m) => ({
+  // الخطة الأسبوعية: المجموع ليوم واحد («كل يوم» + وجبات اليوم المختار)، أو متوسط الأيام في عرض «الكل»
+  const weekly = meals.some((m) => m.day_of_week !== '' && m.day_of_week !== null && m.day_of_week !== undefined);
+  const sum = (list) => list.reduce((t, m) => ({
     kcal: t.kcal + (Number(m.kcal) || 0), protein_g: t.protein_g + (Number(m.protein_g) || 0),
     carbs_g: t.carbs_g + (Number(m.carbs_g) || 0), fat_g: t.fat_g + (Number(m.fat_g) || 0),
-  }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 }), [meals]);
+  }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+  const isEvery = (m) => m.day_of_week === '' || m.day_of_week === null || m.day_of_week === undefined;
+  const totals = useMemo(() => {
+    if (!weekly) return sum(meals);
+    const every = meals.filter(isEvery);
+    if (dayView !== 'all' && dayView !== 'every') return sum([...every, ...meals.filter((m) => String(m.day_of_week) === dayView)]);
+    const used = [...new Set(meals.filter((m) => !isEvery(m)).map((m) => String(m.day_of_week)))];
+    const per = used.map((d) => sum([...every, ...meals.filter((m) => String(m.day_of_week) === d)]));
+    const avg = (k) => per.reduce((t, x) => t + x[k], 0) / (per.length || 1);
+    return { kcal: avg('kcal'), protein_g: avg('protein_g'), carbs_g: avg('carbs_g'), fat_g: avg('fat_g') };
+  }, [meals, weekly, dayView]); // eslint-disable-line
+  const visible = meals.map((m, i) => [m, i]).filter(([m]) => dayView === 'all' || (dayView === 'every' ? isEvery(m) : (isEvery(m) || String(m.day_of_week) === dayView)));
+  const dayCounts = DAYS.map((_, d) => meals.filter((m) => String(m.day_of_week) === String(d)).length);
 
   const setM = (i, k) => (e) => {
     const v = e?.target ? e.target.value : e;
@@ -317,6 +361,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
         slot: m.slot, slot_time: m.slot_time || null, title: m.title || null, items: m.items || null,
         portions: m.portions || null, kcal: toNumOrNull(m.kcal), protein_g: toNumOrNull(m.protein_g),
         carbs_g: toNumOrNull(m.carbs_g), fat_g: toNumOrNull(m.fat_g), position: i,
+        day_of_week: isEvery(m) ? null : Number(m.day_of_week),
       })),
     };
     try {
@@ -337,7 +382,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
       subtitle={`${patient?.full_name} · ${patient?.file_no} — المجاميع تُحسب تلقائياً`}
       footer={<>
         <span className="me-auto flex items-center gap-2 text-[12px] font-bold text-ink/55">
-          المجموع: <b className="tnum text-brand-700">{fmt(totals.kcal, 0)}</b> سعرة ·
+          {weekly ? (dayView === 'all' || dayView === 'every' ? 'متوسط اليوم:' : `مجموع ${DAYS[Number(dayView)]}:`) : 'المجموع:'} <b className="tnum text-brand-700">{fmt(totals.kcal, 0)}</b> سعرة ·
           ب {fmt(totals.protein_g)} · ك {fmt(totals.carbs_g)} · د {fmt(totals.fat_g)} غ
         </span>
         <button className="btn-ghost" onClick={onClose}>إلغاء</button>
@@ -371,10 +416,26 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
           })}
         </div>
 
+        <div className="flex flex-wrap items-center gap-1" data-day-filter>
+          <span className="me-1 text-[12px] font-extrabold text-ink/55">عرض:</span>
+          {[['all', 'كل الوجبات'], ['every', 'كل يوم'], ...DAYS.map((d, i) => [String(i), d])].map(([k, l]) => (
+            <button type="button" key={k} onClick={() => setDayView(k)}
+              className={`rounded-lg px-2.5 py-1 text-[12px] font-bold transition ${dayView === k ? 'bg-brand-700 text-white' : 'bg-sand text-ink/60 hover:bg-brand-50'}`}>
+              {l}{/^\d$/.test(k) && dayCounts[Number(k)] > 0 && <span className="tnum ms-1 opacity-70">{dayCounts[Number(k)]}</span>}
+            </button>
+          ))}
+        </div>
+
         <div className="grid gap-2.5">
-          {meals.map((m, i) => (
-            <div key={i} className="grid gap-2.5 rounded-xl border border-line bg-white p-3 shadow-card lg:grid-cols-[150px_88px_1fr_1fr_1fr_repeat(4,78px)_auto] lg:items-end">
-              <Field label="الوجبة"><Select value={m.slot} onChange={setM(i, 'slot')}>{MEAL_SLOTS.map((s) => <option key={s}>{s}</option>)}</Select></Field>
+          {visible.map(([m, i]) => (
+            <div key={i} className="grid gap-2.5 rounded-xl border border-line bg-surface p-3 shadow-card lg:grid-cols-[150px_88px_1fr_1fr_1fr_repeat(4,78px)_auto] lg:items-end">
+              <div className="grid gap-1.5">
+                <Field label="الوجبة"><Select value={m.slot} onChange={setM(i, 'slot')}>{!MEAL_SLOTS.includes(m.slot) && m.slot && <option value={m.slot}>{__t(m.slot)}</option>}{MEAL_SLOTS.map((s) => <option key={s} value={s}>{__t(s)}</option>)}</Select></Field>
+                <Select value={m.day_of_week == null ? '' : String(m.day_of_week)} onChange={setM(i, 'day_of_week')} className="!py-1.5 text-[12px]" aria-label="اليوم">
+                  <option value="">كل يوم</option>
+                  {DAYS.map((d, di) => <option key={d} value={String(di)}>{d}</option>)}
+                </Select>
+              </div>
               <Field label="التوقيت"><Input type="time" step="300" value={m.slot_time} onChange={setM(i, 'slot_time')} /></Field>
               <Field label="اسم الطبق"><Input value={m.title || ''} onChange={setM(i, 'title')} placeholder="مثال: صدر دجاج مشوي مع أرز بني" /></Field>
               <Field label="الأصناف"><Input value={m.items || ''} onChange={setM(i, 'items')} placeholder="دجاج + أرز + سلطة" /></Field>
@@ -384,7 +445,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
               ))}
               <div className="flex flex-col gap-1.5 pb-1">
                 <button type="button" title="حذف الوجبة" className="btn-danger btn-sm !px-2" onClick={() => setMeals((ms) => ms.filter((_, j) => j !== i))}><Icon.trash /></button>
-                <button type="button" title="إضافة وجبة" className="btn-ghost btn-sm !px-2" onClick={() => setMeals((ms) => [...ms, emptyMeal('سناك عصري', ms.length)])}><Icon.plus /></button>
+                <button type="button" title="إضافة وجبة" className="btn-ghost btn-sm !px-2" onClick={() => setMeals((ms) => [...ms, { ...emptyMeal(MEAL_SLOTS[3], ms.length), day_of_week: /^\d$/.test(dayView) ? dayView : m.day_of_week ?? '' }])}><Icon.plus /></button>
               </div>
               <details className="lg:col-span-9">
                 <summary className="cursor-pointer text-[11.5px] font-bold text-brand-700">إضافة من جدول الأغذية (تحسب السعرات والماكرو)</summary>

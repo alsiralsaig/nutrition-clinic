@@ -4,6 +4,9 @@ import { useApp } from '../app-context.jsx';
 import { api } from '../api.js';
 import { Icon } from './ui.jsx';
 import { ROLES, todayISO } from '../format.js';
+import { NotificationBell } from './Smart.jsx';
+import { ThemeToggle } from '../theme.jsx';
+import { TIME_LOCALE, currentLang, setLang } from '../i18n.js';
 
 export const NAV = [
   { to: '/', label: 'لوحة التحكم', icon: Icon.dash, end: true },
@@ -21,7 +24,7 @@ function Toasts() {
     good: 'border-leaf-500/40 bg-leaf-50 text-leaf-600',
     bad: 'border-clay-500/40 bg-clay-50 text-clay-600',
     warn: 'border-sun-500/40 bg-sun-50 text-sun-600',
-    info: 'border-brand-500/30 bg-white text-ink/75',
+    info: 'border-brand-500/30 bg-surface text-ink/75',
   };
   return (
     <div className="no-print pointer-events-none fixed inset-x-0 top-3 z-[80] flex flex-col items-center gap-2 px-3">
@@ -43,11 +46,11 @@ function Clock() {
     return () => clearInterval(t);
   }, []);
   return (
-    <div className="hidden items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 text-[12.5px] font-bold text-ink/60 lg:flex">
+    <div className="hidden items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 text-[12.5px] font-bold text-ink/60 lg:flex">
       <Icon.clock className="text-brand-600" />
-      <span className="tnum">{now.toLocaleDateString('ar-EG-u-nu-latn', { weekday: 'long', day: 'numeric', month: 'long' })}</span>
+      <span className="tnum">{now.toLocaleDateString(TIME_LOCALE, { weekday: 'long', day: 'numeric', month: 'long' })}</span>
       <span className="text-ink/35">·</span>
-      <span className="tnum">{now.toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' })}</span>
+      <span className="tnum">{now.toLocaleTimeString(TIME_LOCALE, { hour: '2-digit', minute: '2-digit' })}</span>
     </div>
   );
 }
@@ -82,7 +85,7 @@ export function Layout({ children }) {
       <Toasts />
 
       {/* الشريط الجانبي */}
-      <aside className={`no-print fixed inset-y-0 right-0 z-50 flex w-[272px] flex-col gap-1 border-l border-line bg-gradient-to-b from-brand-800 via-brand-700 to-brand-800 p-3.5 text-white transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : 'translate-x-full'} lg:sticky lg:top-0 lg:h-screen lg:translate-x-0`}>
+      <aside className={`no-print fixed inset-y-0 start-0 z-50 flex w-[272px] flex-col gap-1 border-e border-line brand-gradient p-3.5 text-white transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : 'rtl:translate-x-full ltr:-translate-x-full'} lg:sticky lg:top-0 lg:h-screen lg:translate-x-0`}>
         <div className="mb-2 flex items-center gap-3 px-1.5 py-2">
           <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 text-[22px] backdrop-blur">🥗</span>
           <div className="min-w-0">
@@ -95,7 +98,7 @@ export function Layout({ children }) {
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
           {NAV.map((n) => (
             <NavLink key={n.to} to={n.to} end={n.end}
-              className={({ isActive }) => `navlink !text-white/75 hover:!bg-white/10 hover:!text-white ${isActive ? '!bg-white !text-brand-800 shadow-pop' : ''}`}>
+              className={({ isActive }) => `navlink !text-white/75 hover:!bg-white/10 hover:!text-white ${isActive ? '!bg-surface !text-brand-800 shadow-pop' : ''}`}>
               <n.icon className="text-[1.25em]" />
               <span className="flex-1">{n.label}</span>
               {n.to === '/appointments' && todayCount > 0 && (
@@ -120,7 +123,7 @@ export function Layout({ children }) {
         </div>
       </aside>
 
-      {open && <div className="no-print fixed inset-0 z-40 bg-ink/40 lg:hidden" onClick={() => setOpen(false)} />}
+      {open && <div className="no-print fixed inset-0 z-40 bg-[#0b1413]/45 lg:hidden" onClick={() => setOpen(false)} />}
 
       {/* المحتوى */}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -130,9 +133,12 @@ export function Layout({ children }) {
             {NAV.find((n) => (n.end ? n.to === loc.pathname : loc.pathname.startsWith(n.to)))?.label || 'لوحة التحكم'}
           </h1>
           {busy > 0 && <span className="ms-2 h-4 w-4 animate-spin rounded-full border-2 border-brand-200 border-t-brand-700" />}
-          <div className="ms-auto flex items-center gap-2">
+          <div className="ms-auto flex items-center gap-1.5 sm:gap-2">
             <Clock />
             <QuickSearch />
+            <NotificationBell />
+            <ThemeToggle />
+            <LangToggle />
           </div>
         </header>
         {demoMode && (
@@ -174,14 +180,14 @@ function QuickSearch() {
   }, [q]);
   return (
     <div className="relative w-full max-w-[300px]">
-      <div className="flex items-center gap-2 rounded-xl border border-line bg-white px-3 py-2 focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-100">
+      <div className="flex items-center gap-2 rounded-xl border border-line bg-surface px-3 py-2 focus-within:border-brand-400 focus-within:ring-4 focus-within:ring-brand-100">
         <Icon.search className="text-brand-600" />
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="ابحث بالاسم أو رقم الملف أو الهاتف…"
           className="w-full bg-transparent text-[13px] font-bold outline-none placeholder:font-normal placeholder:text-ink/35"
           onKeyDown={(e) => { if (e.key === 'Enter' && q.trim()) { nav(`/patients?q=${encodeURIComponent(q.trim())}`); setHits([]); } }} />
       </div>
       {hits.length > 0 && (
-        <div className="pop-in absolute inset-x-0 top-[calc(100%+6px)] z-40 overflow-hidden rounded-xl border border-line bg-white shadow-pop">
+        <div className="pop-in absolute inset-x-0 top-[calc(100%+6px)] z-40 overflow-hidden rounded-xl border border-line bg-surface shadow-pop">
           {hits.map((h) => (
             <button key={h.id} onMouseDown={() => { nav(`/patients/${h.id}`); setQ(''); setHits([]); }}
               className="flex w-full items-center gap-3 border-b border-line/60 px-3 py-2.5 text-start last:border-0 hover:bg-brand-50">
@@ -192,11 +198,22 @@ function QuickSearch() {
                 <span className="block truncate text-[13px] font-extrabold">{h.full_name}</span>
                 <span className="block truncate text-[11.5px] font-bold text-ink/45 tnum">{h.file_no} · {h.phone || 'بدون هاتف'}</span>
               </span>
-              <Icon.chev className="rotate-180 text-ink/30" />
+              <Icon.chev className="rtl:rotate-180 text-ink/30" />
             </button>
           ))}
         </div>
       )}
     </div>
+  );
+}
+
+/** تبديل اللغة (يعيد تحميل الصفحة) */
+function LangToggle() {
+  const en = currentLang() === 'en';
+  return (
+    <button type="button" className="btn-ghost btn-sm !px-2.5 font-extrabold" onClick={() => setLang(en ? 'ar' : 'en')}
+      title={en ? 'العربية' : 'English'} aria-label={en ? 'العربية' : 'English'} data-lang-toggle>
+      {en ? 'ع' : 'EN'}
+    </button>
   );
 }

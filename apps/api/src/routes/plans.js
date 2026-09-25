@@ -47,11 +47,18 @@ async function loadPlan(id) {
   const plan = await db.get(`SELECT * FROM diet_plans WHERE id = ?`, id);
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
   const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id = ? ${MEAL_ORDER}`, id);
-  return { ...plan, meals, totals: sumMacros(meals), ...weeklyInfo(meals) };
+  return withTotals(plan, meals);
+}
+
+/** مجاميع الخطة: في الأسبوعية «totals» = متوسط اليوم (لا مجموع 35 وجبة)، ومجموع الأسبوع في week_totals */
+export function withTotals(plan, meals) {
+  const w = weeklyInfo(meals);
+  const all = sumMacros(meals);
+  return { ...plan, meals, ...w, totals: w.weekly ? { ...all, ...w.daily_average } : all, ...(w.weekly ? { week_totals: all } : {}) };
 }
 
 /** الخطة الأسبوعية: المجاميع اليومية تخص يوماً واحداً لا مجموع الأسبوع */
-function weeklyInfo(meals) {
+export function weeklyInfo(meals) {
   const weekly = meals.some((m) => m.day_of_week !== null && m.day_of_week !== undefined);
   if (!weekly) return { weekly: false };
   const every = meals.filter((m) => m.day_of_week === null);
@@ -76,7 +83,10 @@ router.get('/', wrap(async (req, res) => {
   const rows = await db.all(`
     SELECT dp.*, p.first_name, p.last_name, p.file_no,
       (SELECT COUNT(*) FROM diet_meals m WHERE m.plan_id = dp.id) AS meals_count,
-      (SELECT COALESCE(SUM(m.kcal),0) FROM diet_meals m WHERE m.plan_id = dp.id) AS kcal_total
+      (SELECT ROUND((COALESCE(SUM(m.kcal) FILTER (WHERE m.day_of_week IS NULL), 0)
+         + COALESCE(SUM(m.kcal) FILTER (WHERE m.day_of_week IS NOT NULL), 0) / GREATEST(COUNT(DISTINCT m.day_of_week), 1))::numeric)
+       FROM diet_meals m WHERE m.plan_id = dp.id) AS kcal_total, -- الأسبوعية: متوسط اليوم
+      (SELECT COUNT(DISTINCT m.day_of_week) FROM diet_meals m WHERE m.plan_id = dp.id) AS days_count
     FROM diet_plans dp JOIN patients p ON p.id = dp.patient_id
     ${pid ? 'WHERE dp.patient_id = ?' : ''}
     ORDER BY dp.id DESC LIMIT 500

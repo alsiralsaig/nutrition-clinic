@@ -1,5 +1,6 @@
 // إدارة المرضى: CRUD + بحث سريع + ملف المريض الشامل في صفحة واحدة
 import { Router } from 'express';
+import { withTotals } from './plans.js';
 import { db, nextFileNo, audit, NOW } from '../db.js';
 import {
   badRequest, conflict, notFound, pick, str, requiredStr, wrap,
@@ -184,7 +185,7 @@ router.get('/:id(\\d+)/profile', wrap(async (req, res) => {
     : [];
   const plans = planRows.map((pl) => {
     const meals = allMeals.filter((m) => m.plan_id === pl.id);
-    return { ...pl, meals, totals: sumMacros(meals), meals_count: meals.length };
+    return { ...withTotals(pl, meals), meals_count: meals.length };
   });
 
   const appointments = await db.all(`SELECT * FROM appointments WHERE patient_id = ? ORDER BY date DESC, time DESC LIMIT 200`, id);

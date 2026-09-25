@@ -3,7 +3,33 @@
 @tailwind utilities;
 
 @layer base {
-  :root { color-scheme: light; }
+  /* لوحة الألوان كمتغيرات: الفاتح افتراضي، والداكن بصنف .dark على <html> */
+  :root {
+    --c-ink: 28 43 42; --c-sand: 246 244 239; --c-line: 230 225 216; --c-surface: 255 255 255;
+    --c-brand-50: 239 250 248; --c-brand-100: 214 242 238; --c-brand-200: 174 229 223; --c-brand-300: 120 210 202;
+    --c-brand-400: 67 183 174; --c-brand-500: 34 154 146; --c-brand-600: 21 124 119; --c-brand-700: 15 99 96;
+    --c-brand-800: 14 79 77; --c-brand-900: 13 65 64;
+    --c-leaf-50: 242 249 238; --c-leaf-100: 224 241 213; --c-leaf-500: 90 168 67; --c-leaf-600: 70 135 53;
+    --c-sun-50: 254 248 233; --c-sun-100: 253 236 200; --c-sun-500: 214 154 25; --c-sun-600: 180 125 12;
+    --c-clay-50: 253 242 239; --c-clay-100: 251 225 218; --c-clay-500: 201 96 74; --c-clay-600: 169 74 54;
+    --shadow-card: 0 1px 2px rgba(16,44,42,.04), 0 8px 24px -12px rgba(16,44,42,.14);
+    --shadow-pop: 0 24px 60px -20px rgba(12,45,43,.35);
+    color-scheme: light;
+  }
+  .dark {
+    --c-ink: 226 236 234; --c-sand: 11 20 19; --c-line: 40 58 56; --c-surface: 19 32 31;
+    --c-brand-50: 16 40 38; --c-brand-100: 22 58 55; --c-brand-200: 30 80 76; --c-brand-300: 42 110 104;
+    --c-brand-400: 70 190 180; --c-brand-500: 42 160 150; --c-brand-600: 33 140 132; --c-brand-700: 38 160 151;
+    --c-brand-800: 52 176 166; --c-brand-900: 110 205 196;
+    --c-leaf-50: 20 40 22; --c-leaf-100: 28 56 30; --c-leaf-500: 110 190 90; --c-leaf-600: 128 202 106;
+    --c-sun-50: 45 35 12; --c-sun-100: 62 48 15; --c-sun-500: 225 170 50; --c-sun-600: 234 184 76;
+    --c-clay-50: 50 25 20; --c-clay-100: 70 33 26; --c-clay-500: 214 112 92; --c-clay-600: 236 138 117;
+    --shadow-card: 0 1px 2px rgba(0,0,0,.3), 0 8px 24px -12px rgba(0,0,0,.6);
+    --shadow-pop: 0 24px 60px -20px rgba(0,0,0,.75);
+    color-scheme: dark;
+  }
+  /* انتقال ناعم عند تبديل الوضع (دون تحريك كل شيء عند التحميل) */
+  .theme-anim, .theme-anim * { transition: background-color .25s ease, border-color .25s ease, color .15s ease !important; }
   * { -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; }
   body {
@@ -26,13 +52,13 @@
 }
 
 @layer components {
-  .card { @apply rounded-xl2 border border-line bg-white shadow-card; }
+  .card { @apply rounded-xl2 border border-line bg-surface shadow-card; }
   .card-pad { @apply p-4 sm:p-5; }
   .section-title { @apply flex items-center gap-2 text-[15px] font-bold text-ink; }
   .muted { @apply text-[13px] leading-5 text-ink/55; }
   .label { @apply mb-1.5 block text-[12.5px] font-semibold text-ink/70; }
   .field {
-    @apply w-full rounded-xl border border-line bg-white px-3.5 py-2.5 text-[14px] text-ink shadow-inner
+    @apply w-full rounded-xl border border-line bg-surface px-3.5 py-2.5 text-[14px] text-ink shadow-inner
       placeholder:text-ink/35 transition
       focus:border-brand-400 focus:ring-4 focus:ring-brand-100
       disabled:bg-sand disabled:text-ink/50 read-only:bg-sand read-only:text-ink/60;
@@ -42,7 +68,7 @@
       transition active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary { @apply btn bg-brand-700 text-white shadow-sm hover:bg-brand-800 focus:ring-4 focus:ring-brand-100; }
-  .btn-ghost { @apply btn border border-line bg-white text-ink/80 hover:border-brand-300 hover:text-brand-700; }
+  .btn-ghost { @apply btn border border-line bg-surface text-ink/80 hover:border-brand-300 hover:text-brand-700; }
   .btn-soft { @apply btn bg-brand-50 text-brand-700 hover:bg-brand-100; }
   .btn-danger { @apply btn bg-clay-50 text-clay-600 hover:bg-clay-100; }
   .btn-sm { @apply px-3 py-1.5 text-[12.5px]; }
@@ -62,13 +88,21 @@
   .tab {
     @apply relative rounded-lg px-3.5 py-2 text-[13px] font-bold text-ink/55 transition hover:text-brand-700;
   }
-  .tab-active { @apply bg-white text-brand-700 shadow-card; }
+  .tab-active { @apply bg-surface text-brand-700 shadow-card; }
   .navlink {
     @apply flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13.5px] font-bold text-ink/65 transition
-      hover:bg-white/70 hover:text-brand-800;
+      hover:bg-surface/70 hover:text-brand-800;
   }
-  .navlink-active { @apply bg-white text-brand-800 shadow-card; }
+  .navlink-active { @apply bg-surface text-brand-800 shadow-card; }
   .print-doc { @apply text-[12.5px] leading-relaxed text-black; }
+  /* تدرّج العلامة (الشريط الجانبي، شاشة الدخول، الصورة الرمزية): ثابت داكن في الوضعين كي يبقى النص الأبيض واضحاً */
+  .brand-gradient { background-image: linear-gradient(to bottom, #0e4f4d, #0f6360, #0e4f4d); }
+  .dark .brand-gradient { background-image: linear-gradient(to bottom, #0f302e, #0c2624, #0a1e1d); }
+  .brand-gradient-br { background-image: linear-gradient(to bottom right, #0e4f4d, #0f6360, #157c77); }
+  .dark .brand-gradient-br { background-image: linear-gradient(to bottom right, #0f302e, #11403d, #145150); }
+  /* ألوان Tailwind الافتراضية المستعملة مباشرة (تنبيه كلمة المرور) */
+  .dark .bg-rose-50 { background-color: rgb(60 20 28); }
+  .dark .text-rose-700 { color: rgb(253 164 175); }
 }
 
 @layer utilities {
@@ -84,6 +118,19 @@
 @page { size: A4; margin: 13mm 12mm; }
 
 @media print {
+  /* الطباعة و PDF دائماً بالألوان الفاتحة مهما كان وضع الشاشة */
+  .dark {
+    --c-ink: 28 43 42; --c-sand: 246 244 239; --c-line: 230 225 216; --c-surface: 255 255 255;
+    --c-brand-50: 239 250 248; --c-brand-100: 214 242 238; --c-brand-200: 174 229 223; --c-brand-300: 120 210 202;
+    --c-brand-400: 67 183 174; --c-brand-500: 34 154 146; --c-brand-600: 21 124 119; --c-brand-700: 15 99 96;
+    --c-brand-800: 14 79 77; --c-brand-900: 13 65 64;
+    --c-leaf-50: 242 249 238; --c-leaf-100: 224 241 213; --c-leaf-500: 90 168 67; --c-leaf-600: 70 135 53;
+    --c-sun-50: 254 248 233; --c-sun-100: 253 236 200; --c-sun-500: 214 154 25; --c-sun-600: 180 125 12;
+    --c-clay-50: 253 242 239; --c-clay-100: 251 225 218; --c-clay-500: 201 96 74; --c-clay-600: 169 74 54;
+    --shadow-card: 0 1px 2px rgba(16,44,42,.04), 0 8px 24px -12px rgba(16,44,42,.14);
+    --shadow-pop: 0 24px 60px -20px rgba(12,45,43,.35);
+    color-scheme: light;
+  }
   html, body { background: #fff !important; }
   body { font-size: 12px; }
   .no-print, .no-print * { display: none !important; }

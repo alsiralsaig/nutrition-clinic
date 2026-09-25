@@ -4,7 +4,11 @@ import { useApp, useLoader } from '../app-context.jsx';
 import { api } from '../api.js';
 import PatientForm from '../components/PatientForm.jsx';
 import { AppointmentForm, MeasurementForm, PaymentForm, PlanEditor } from '../components/Forms.jsx';
-import { PatientProgressChart } from '../components/Charts.jsx';
+import { AdherenceWeightChart, PatientProgressChart } from '../components/Charts.jsx';
+import {
+  ACTIVITY_LEVELS, AdherenceModal, AdherencePill, DAYS, GeneratorModal, ShoppingListModal, VoiceNoteButton,
+  WaIcon, WhatsAppModal, appendText, useDaySelector,
+} from '../components/Smart.jsx';
 import { PatientReportDoc, PlanDoc, WeightReportDoc } from '../components/PrintDocs.jsx';
 import { PrintSheet } from '../components/ui.jsx';
 import { Badge, Card, Confirm, Empty, ErrorBox, Icon, MacroBar, Modal, Row, Spinner, Table, Textarea } from '../components/ui.jsx';
@@ -32,7 +36,7 @@ function GoalBar({ start, current, goal }) {
         <span className="tnum text-ink/45">{fmt(start)} ← {fmt(current)} → {fmt(goal)} كغ</span>
       </div>
       <div className="relative h-2.5 overflow-hidden rounded-full bg-sand">
-        <div className="h-full rounded-full bg-gradient-to-l from-brand-500 to-brand-700 transition-all" style={{ width: `${pct}%` }} />
+        <div className="h-full rounded-full rtl:bg-gradient-to-l ltr:bg-gradient-to-r from-brand-500 to-brand-700 transition-all" style={{ width: `${pct}%` }} />
       </div>
     </div>
   );
@@ -51,6 +55,10 @@ export default function PatientFile() {
   const [confirm, setConfirm] = useState(null);
   const [chartKeys, setChartKeys] = useState(['weight_kg', 'bmi']);
   const [noteDraft, setNoteDraft] = useState('');
+  const [wa, setWa] = useState(null); // { kind, refId }
+  const [gen, setGen] = useState(false);
+  const [shop, setShop] = useState(null); // plan
+  const [adhVisit, setAdhVisit] = useState(null);
 
   useEffect(() => { api.get('/settings').then((r) => setClinic(r.settings || {})).catch(() => {}); }, []);
   useEffect(() => { if (data) setNoteDraft(data.patient.notes || ''); }, [data]);
@@ -88,7 +96,7 @@ export default function PatientFile() {
       <Card className="overflow-visible">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="flex min-w-0 items-start gap-3.5">
-            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-brand-600 to-brand-800 text-[20px] font-extrabold text-white shadow-card">
+            <span className="grid h-14 w-14 shrink-0 place-items-center rounded-2xl brand-gradient-br text-[20px] font-extrabold text-white shadow-card">
               {initials(p)}
             </span>
             <div className="min-w-0">
@@ -112,6 +120,7 @@ export default function PatientFile() {
             {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('measurement'); }}><Icon.scale /> قياسات جديدة</button>}
             {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('appointment'); }}><Icon.cal /> موعد</button>}
             {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('payment'); }}><Icon.wallet /> دفعة</button>}
+            {canWrite && <button className="btn-ghost btn-sm text-[#1f9d55]" onClick={() => setWa({ kind: 'custom' })}><WaIcon /> واتساب</button>}
             <button className="btn-soft btn-sm" onClick={() => openDoc('report')}><Icon.print /> تقرير المريض</button>
           </div>
         </div>
@@ -139,7 +148,7 @@ export default function PatientFile() {
       </Card>
 
       {/* شريط التنقل داخل الملف */}
-      <nav className="no-print sticky top-[52px] z-20 -mx-1 flex gap-1 overflow-x-auto rounded-xl border border-line bg-white/85 p-1 backdrop-blur no-scrollbar">
+      <nav className="no-print sticky top-[52px] z-20 -mx-1 flex gap-1 overflow-x-auto rounded-xl border border-line bg-surface/85 p-1 backdrop-blur no-scrollbar">
         {SECTIONS.map(([k, l]) => (
           <button key={k} onClick={() => scrollTo(k)}
             className="whitespace-nowrap rounded-lg px-3 py-1.5 text-[12.5px] font-bold text-ink/55 transition hover:bg-brand-50 hover:text-brand-700">
@@ -196,6 +205,31 @@ export default function PatientFile() {
         </div>
       </div>
 
+      {/* ================= الالتزام مقابل الوزن ================= */}
+      <Card title="الالتزام بالخطة وتغيّر الوزن" icon={<Icon.flame />}
+        subtitle={data.adherence?.points?.length ? `متوسط الالتزام ${data.adherence.average_adherence}% · آخر تقييم ${data.adherence.last_adherence}%${data.adherence.correlation != null ? ` · الارتباط r = ${data.adherence.correlation}` : ''}` : 'قيّم الالتزام في كل زيارة متابعة لترى أثره على الوزن'}>
+        {data.adherence?.points?.length ? (
+          <div className="grid gap-4 lg:grid-cols-[1.7fr_1fr]">
+            <AdherenceWeightChart points={data.adherence.points} />
+            <div className="grid content-start gap-2">
+              {data.adherence.points.slice(-5).reverse().map((pt) => (
+                <div key={pt.visit_id} className="flex items-center justify-between gap-2 rounded-xl border border-line bg-sand/50 px-3 py-2">
+                  <span className="text-[12.5px] font-extrabold">{shortDate(pt.date)}</span>
+                  <AdherencePill value={pt.adherence} />
+                  <span className={`tnum text-[12px] font-extrabold ${pt.weekly_progress_kg > 0 ? 'text-leaf-600' : pt.weekly_progress_kg < 0 ? 'text-clay-600' : 'text-ink/40'}`}>
+                    {pt.weekly_progress_kg == null ? '—' : `${pt.weekly_progress_kg > 0 ? '▲' : '▼'} ${fmt(Math.abs(pt.weekly_progress_kg), 2)} كغ/أسبوع`}
+                  </span>
+                </div>
+              ))}
+              <p className="muted">▲ تقدّم نحو الهدف · ▼ عكس الهدف. التقدّم الأسبوعي = تغيّر الوزن منذ القياس السابق ÷ عدد الأيام × 7.</p>
+            </div>
+          </div>
+        ) : (
+          <Empty icon="📈" title="لا تقييمات التزام بعد"
+            message="عند تسجيل قياسات زيارة متابعة، حرّك منزلق «الالتزام بالخطة» (0–100%). أو قيّم زيارة سابقة من جدول الزيارات." />
+        )}
+      </Card>
+
       {/* ================= البيانات ================= */}
       <div id="sec-profile" className="grid gap-4 lg:grid-cols-2">
         <Card title="بيانات المريض" icon={<Icon.users />}
@@ -211,6 +245,8 @@ export default function PatientFile() {
             <Row label="الوزن المستهدف" value={p.goal_weight ? `${fmt(p.goal_weight)} كغ` : '—'} mono />
             <Row label="BMI البداية" value={p.start_bmi ? `${fmt(p.start_bmi)} · ${p.start_bmi_category}` : '—'} mono />
             <Row label="الوزن المثالي تقديري" value={p.ideal_weight ? `${fmt(p.ideal_weight)} كغ` : '—'} mono />
+            <Row label="مستوى النشاط" value={ACTIVITY_LEVELS[p.activity_level] || '—'} />
+            <Row label="تذكيرات واتساب" value={`${p.reminders_opt_in === false || p.reminders_opt_in === 0 ? 'المواعيد: لا' : 'المواعيد: نعم'} · ${p.daily_reminder ? 'يومي: نعم' : 'يومي: لا'}`} />
             <Row label="تاريخ التسجيل" value={shortDate(p.created_at?.slice(0, 10))} />
             <Row label="آخر تحديث" value={shortDate(p.updated_at?.slice(0, 10))} />
           </dl>
@@ -228,6 +264,7 @@ export default function PatientFile() {
           subtitle={canWrite ? 'تُحفظ مباشرة في ملف المريض' : undefined}
           actions={canWrite && (
             <>
+              <VoiceNoteButton onText={(t) => setNoteDraft((d) => appendText(d, t))} />
               <button className="btn-ghost btn-sm" onClick={() => setNoteDraft(p.notes || '')} disabled={noteDraft === (p.notes || '')}>تراجع</button>
               <button className="btn-primary btn-sm" disabled={noteDraft === (p.notes || '')}
                 onClick={() => run(() => api.put(`/patients/${p.id}`, { notes: noteDraft }), { ok: 'تم حفظ الملاحظات' }).then(reload).catch(() => {})}>حفظ</button>
@@ -235,8 +272,11 @@ export default function PatientFile() {
           )}>
           <div>
             {canWrite ? (
+              <>
               <Textarea value={noteDraft} onChange={(e) => setNoteDraft(e.target.value)}
-                className="min-h-[190px] leading-7" placeholder="حالة طبية، أدوية، حساسية، التزام، خطة التواصل…" />
+                className="min-h-[190px] leading-7" placeholder="حالة طبية، أدوية، حساسية، التزام، خطة التواصل… (أو استعمل الإملاء الصوتي 🎙️)" />
+              {noteDraft !== (p.notes || '') && <p className="mt-1.5 text-[11.5px] font-bold text-sun-600">تعديلات غير محفوظة — اضغط «حفظ».</p>}
+              </>
             ) : (
               <p className="whitespace-pre-line text-[13px] leading-7 text-ink/75">{p.notes || 'لا ملاحظات مسجّلة.'}</p>
             )}
@@ -289,6 +329,9 @@ export default function PatientFile() {
         <Card title="البرنامج الغذائي" subtitle={data.active_plan ? `الحالي: ${data.active_plan.title}` : 'لا توجد خطة معتمدة بعد'} icon={<Icon.meal />}
           actions={canWrite && (
             <>
+              <button className="btn-soft btn-sm" onClick={() => setGen(true)}><Icon.flame /> توليد خطة أسبوعية</button>
+              {(data.active_plan || data.plans[0]) && <button className="btn-ghost btn-sm" onClick={() => setShop(data.active_plan || data.plans[0])}><Icon.download /> قائمة التسوق</button>}
+              {data.active_plan && <button className="btn-ghost btn-sm text-[#1f9d55]" onClick={() => setWa({ kind: 'plan', refId: data.active_plan.id })}><WaIcon /> إرسال الخطة</button>}
               {data.active_plan && <button className="btn-ghost btn-sm" onClick={() => openDoc('plan')}><Icon.print /> طباعة / PDF</button>}
               <button className="btn-primary btn-sm" onClick={() => { setEditing(data.active_plan || data.plans[0] || null); setModal('plan'); }}>
                 <Icon.pencil /> {data.active_plan ? 'تعديل الحالي' : 'إنشاء برنامج'}
@@ -297,7 +340,7 @@ export default function PatientFile() {
           )}>
           {data.plans.length === 0 ? (
             <Empty icon="🍽️" title="لا برنامج غذائي" message={canWrite ? 'أنشئ خطة غذائية بوجباتها وسعراتها — المريض يستلمها مطبوعة أو من تطبيق الموبايل.' : 'لم تُعتمد أي خطة بعد.'}
-              action={canWrite ? <button className="btn-primary btn-sm" onClick={() => { setEditing(null); setModal('plan'); }}><Icon.plus /> برنامج جديد</button> : null} />
+              action={canWrite ? <div className="flex flex-wrap justify-center gap-2"><button className="btn-primary btn-sm" onClick={() => setGen(true)}><Icon.flame /> توليد خطة أسبوعية ذكية</button><button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('plan'); }}><Icon.plus /> برنامج يدوي</button></div> : null} />
           ) : (
             <div className="grid gap-3 lg:grid-cols-[1.5fr_1fr]">
               <PlanView plan={data.active_plan || data.plans[0]} />
@@ -335,13 +378,20 @@ export default function PatientFile() {
       <div id="sec-visits">
         <Card title="الزيارات السابقة" subtitle={`${stats.visits_count} زيارة مسجّلة`} icon={<Icon.clock />} pad={false}>
           {data.visits.length === 0 ? <Empty icon="📋" title="لا زيارات" /> : (
-            <Table head={['#', 'التاريخ', 'النوع', 'السبب', 'القياسات', 'سجّلها']}>
+            <Table head={['#', 'التاريخ', 'النوع', 'السبب', 'الالتزام', 'القياسات', 'سجّلها']}>
               {data.visits.map((v, i) => (
                 <tr key={v.id} className="group">
                   <td className="tnum text-ink/45">{data.visits.length - i}</td>
                   <td className="whitespace-nowrap font-extrabold">{shortDate(v.visit_date)}</td>
                   <td><Badge tone={VISIT_TYPES[v.visit_type]?.color}>{VISIT_TYPES[v.visit_type]?.label || v.visit_type}</Badge></td>
                   <td className="text-[12.5px] text-ink/70">{v.reason || '—'}</td>
+                  <td>
+                    {canWrite ? (
+                      <button className="rounded-lg transition hover:ring-2 hover:ring-brand-200" title={v.adherence_notes || 'تقييم الالتزام'} onClick={() => setAdhVisit(v)}>
+                        {v.adherence == null ? <span className="rounded-lg border border-dashed border-line px-2 py-0.5 text-[11.5px] font-bold text-ink/45">+ تقييم</span> : <AdherencePill value={v.adherence} />}
+                      </button>
+                    ) : <AdherencePill value={v.adherence} />}
+                  </td>
                   <td>{v.has_measurements ? <Badge tone="good"><Icon.check /> مسجلة</Badge> : (canWrite
                     ? <button className="btn-soft btn-sm !py-1" onClick={() => { setEditing({ createFor: v }); setModal('measurement'); }}>إدخال قياسات</button>
                     : <Badge tone="warn">فارغة</Badge>)}</td>
@@ -368,12 +418,14 @@ export default function PatientFile() {
                     </td>
                     <td className="tnum">{a.time}</td>
                     <td className="text-[12.5px]">{VISIT_TYPES[a.visit_type]?.label || a.visit_type}</td>
-                    <td><Badge tone={APPT_STATUS[a.status]?.color}>{APPT_STATUS[a.status]?.label}</Badge></td>
+                    <td><Badge tone={APPT_STATUS[a.status]?.color}>{APPT_STATUS[a.status]?.label}</Badge>
+                      {a.reminded_at && <span className="ms-1 text-[10.5px] font-bold text-leaf-600" title={a.reminded_at}>✓ ذُكّر</span>}</td>
                     <td className="tnum text-ink/55">{a.duration_min}د</td>
                     <td className="max-w-[220px]"><p className="truncate text-[12px] text-ink/60">{a.notes || '—'}</p></td>
                     <td className="row-actions">
                       {canWrite && (
                         <div className="flex gap-1">
+                          {['scheduled', 'confirmed'].includes(a.status) && <button className="btn-ghost btn-sm !px-2 text-[#1f9d55]" title="تذكير واتساب" onClick={() => setWa({ kind: 'appointment_reminder', refId: a.id })}><WaIcon /></button>}
                           <button className="btn-ghost btn-sm !px-2" title="تعديل" onClick={() => { setEditing(a); setModal('appointment'); }}><Icon.pencil /></button>
                           {a.status !== 'done' && <button className="btn-soft btn-sm !px-2" title="تمت" onClick={() => run(() => api.post(`/appointments/${a.id}/status`, { status: 'done' }), { ok: 'تم تسجيل الزيارة' }).then(reload).catch(() => {})}><Icon.check /></button>}
                           <button className="btn-danger btn-sm !px-2" title="حذف" onClick={() => setConfirm({ kind: 'appointments', id: a.id, text: 'حذف هذا الموعد؟' })}><Icon.trash /></button>
@@ -430,6 +482,11 @@ export default function PatientFile() {
       <PlanEditor open={modal === 'plan'} patient={p} plan={editing}
         onClose={() => { setModal(null); setEditing(null); }} onSaved={reload} />
 
+      <GeneratorModal open={gen} onClose={() => setGen(false)} patient={p} onSaved={reload} />
+      <ShoppingListModal open={!!shop} onClose={() => setShop(null)} plan={shop} patient={p} clinic={clinic} />
+      <WhatsAppModal open={!!wa} onClose={() => { setWa(null); reload(); }} patient={p} initialKind={wa?.kind || 'custom'} refId={wa?.refId || null} appointments={data.appointments} />
+      <AdherenceModal open={!!adhVisit} visit={adhVisit} onClose={() => setAdhVisit(null)} onSaved={reload} />
+
       <Confirm open={!!confirm} onCancel={() => setConfirm(null)} busy={false}
         title="تأكيد العملية" message={confirm?.text || ''}
         confirmText={confirm?.action === 'void' ? 'إلغاء الدفعة' : 'تأكيد الحذف'}
@@ -452,14 +509,29 @@ export default function PatientFile() {
 
 /* عرض الوجبات داخل الملف */
 function PlanView({ plan }) {
+  const sel = useDaySelector(plan);
   if (!plan) return null;
   return (
     <div className="grid gap-2.5">
-      {plan.meals.map((m) => (
+      {sel.weekly && (
+        <div className="flex gap-1 overflow-x-auto no-scrollbar" data-day-tabs>
+          {sel.days.map((d) => {
+            const t = plan.by_day?.find((x) => x.day === d.day);
+            return (
+              <button key={d.day} onClick={() => sel.setDay(d.day)}
+                className={`shrink-0 rounded-lg px-3 py-1.5 text-center text-[12px] font-bold transition ${sel.day === d.day ? 'bg-brand-700 text-white' : 'bg-sand text-ink/60 hover:bg-brand-50'}`}>
+                {d.name}{t && <span className="tnum block text-[10.5px] opacity-75">{fmt(t.kcal, 0)}</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {sel.weekly && plan.daily_average && <p className="muted tnum">متوسط اليوم: {fmt(plan.daily_average.kcal, 0)} سعرة · ب {plan.daily_average.protein_g} · ك {plan.daily_average.carbs_g} · د {plan.daily_average.fat_g} غ</p>}
+      {sel.meals.map((m) => (
         <div key={m.id} className="flex items-start gap-3 rounded-xl border border-line bg-sand/50 p-3">
-          <span className="grid h-10 w-14 shrink-0 place-items-center rounded-lg bg-white text-center shadow-card">
+          <span className="grid h-10 w-14 shrink-0 place-items-center rounded-lg bg-surface text-center shadow-card">
             <span>
-              <span className="block text-[11px] font-extrabold text-brand-700">{m.slot}</span>
+              <span className="block text-[11px] font-extrabold text-brand-700">{__t(m.slot)}</span>
               <span className="tnum block text-[10px] font-bold text-ink/40">{m.slot_time || ''}</span>
             </span>
           </span>

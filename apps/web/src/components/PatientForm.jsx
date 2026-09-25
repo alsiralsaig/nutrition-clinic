@@ -1,12 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { useApp } from '../app-context.jsx';
-import { Field, Icon, Input, Modal, Select, Textarea } from './ui.jsx';
+import { Field, Icon, Input, Modal, Select, Textarea, Toggle } from './ui.jsx';
+import { ACTIVITY_LEVELS, VoiceNoteButton, appendText } from './Smart.jsx';
 import { GENDERS, fmt, todayISO } from '../format.js';
 
 const EMPTY = {
   first_name: '', last_name: '', phone: '', birth_date: '', gender: 'female',
   height_cm: '', start_weight: '', goal_weight: '', goal: '', notes: '', status: 'active',
+  activity_level: 'light', reminders_opt_in: true, daily_reminder: false,
 };
 
 /** BMI محسوب للمعاينة فقط — القيمة المعتمدة تُحسب في الخادم */
@@ -30,6 +32,9 @@ export default function PatientForm({ open, onClose, patient, onSaved }) {
       height_cm: patient.height_cm ?? '',
       start_weight: patient.start_weight ?? '',
       goal_weight: patient.goal_weight ?? '',
+      activity_level: patient.activity_level || 'light',
+      reminders_opt_in: !(patient.reminders_opt_in === false || patient.reminders_opt_in === 0),
+      daily_reminder: !!patient.daily_reminder,
     } : EMPTY);
   }, [open, patient]);
 
@@ -67,6 +72,8 @@ export default function PatientForm({ open, onClose, patient, onSaved }) {
       start_weight: form.start_weight === '' ? null : Number(form.start_weight),
       goal_weight: form.goal_weight === '' ? null : Number(form.goal_weight),
       goal: form.goal.trim(), notes: form.notes.trim(),
+      activity_level: form.activity_level || null,
+      reminders_opt_in: !!form.reminders_opt_in, daily_reminder: !!form.daily_reminder,
     };
     setBusy(true);
     try {
@@ -108,7 +115,25 @@ export default function PatientForm({ open, onClose, patient, onSaved }) {
           <Field label="الهدف الغذائي"><Input value={form.goal} onChange={set('goal')} placeholder="إنقاص 12 كجم دهون مع الحفاظ على العضل" /></Field>
         </div>
 
-        <Field label="ملاحظات سريرية"><Textarea value={form.notes} onChange={set('notes')} placeholder="حساسية، أمراض مزمنة، أدوية، مستوى النشاط، تفضيلات الأكل…" /></Field>
+        <div className="grid gap-3 rounded-xl border border-line bg-sand/50 p-3 sm:grid-cols-[1.2fr_1fr]">
+          <Field label="مستوى النشاط البدني" hint="يدخل في حساب السعرات لمولّد الخطة">
+            <Select value={form.activity_level} onChange={set('activity_level')}>
+              {Object.entries(ACTIVITY_LEVELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+            </Select>
+          </Field>
+          <div className="grid content-center gap-2.5">
+            <Toggle checked={!!form.reminders_opt_in} onChange={set('reminders_opt_in')} label="تذكير واتساب قبل المواعيد" />
+            <Toggle checked={!!form.daily_reminder} onChange={set('daily_reminder')} label="تذكير يومي بوجبات الخطة" />
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-1.5 flex items-center justify-between gap-2">
+            <span className="label !mb-0">ملاحظات سريرية</span>
+            <VoiceNoteButton onText={(t) => setForm((f) => ({ ...f, notes: appendText(f.notes, t) }))} />
+          </div>
+          <Textarea value={form.notes} onChange={set('notes')} placeholder="حساسية، أمراض مزمنة، أدوية، تفضيلات الأكل…" />
+        </div>
 
         {/* مؤشرات محسوبة — للعرض فقط ولا تُرسل للحفظ */}
         <div className="grid gap-2 rounded-xl border border-dashed border-brand-200 bg-brand-50/60 p-3.5 sm:grid-cols-3">

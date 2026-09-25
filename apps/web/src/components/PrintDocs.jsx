@@ -1,5 +1,7 @@
+import { TIME_LOCALE } from '../i18n.js';
 import React from 'react';
 import { fmt, longDate, shortDate, GENDERS, VISIT_TYPES, PAY_METHODS, money, bmiTone } from '../format.js';
+import { DAYS } from './Smart.jsx';
 
 /* ترويسة أي ورقة مطبوعة */
 export function DocHeader({ clinic = {}, title, subtitle, patient }) {
@@ -65,7 +67,7 @@ export function PatientReportDoc({ report }) {
   const valid = payments.filter((x) => !x.voided);
   return (
     <article dir="rtl">
-      <DocHeader clinic={clinic} patient={p} title={`تقرير طبي تغذوي شامل — ${p.first_name} ${p.last_name}`} subtitle={`${p.file_no} · صادر في ${new Date().toLocaleString('ar-EG-u-nu-latn')}`} />
+      <DocHeader clinic={clinic} patient={p} title={`تقرير طبي تغذوي شامل — ${p.first_name} ${p.last_name}`} subtitle={`${p.file_no} · صادر في ${new Date().toLocaleString(TIME_LOCALE)}`} />
       <DocSection title="أولاً: بيانات المريض">
         <InfoGrid items={[
           ['الاسم الكامل', `${p.first_name} ${p.last_name}`], ['الجنس', GENDERS[p.gender] || '—'],
@@ -122,7 +124,7 @@ export function PatientReportDoc({ report }) {
         <table className="mt-2">
           <thead><tr>{['الوجبة', 'التوقيت', 'الأصناف', 'الكمية', 'سعرات', 'بروتين', 'كربو', 'دهون'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
           <tbody>{(activePlan.meals || []).map((m) => (
-            <tr key={m.id}><td className="font-bold">{m.slot}</td><td>{m.slot_time || '—'}</td><td>{m.items || m.title || '—'}</td><td>{m.portions || '—'}</td>
+            <tr key={m.id}><td className="font-bold">{__t(m.slot)}</td><td>{m.slot_time || '—'}</td><td>{m.items || m.title || '—'}</td><td>{m.portions || '—'}</td>
               <td>{fmt(m.kcal, 0)}</td><td>{fmt(m.protein_g)}</td><td>{fmt(m.carbs_g)}</td><td>{fmt(m.fat_g)}</td></tr>
           ))}</tbody>
         </table>
@@ -175,30 +177,43 @@ export function PlanDoc({ plan, patient, clinic, measurements }) {
         )}
       </DocSection>
 
-      <DocSection title="الوجبات اليومية">
-        <table>
-          <thead><tr>{['الوجبة', 'التوقيت', 'الأصناف', 'الكميات', 'سعرات', 'ب', 'ك', 'د'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
-          <tbody>
-            {plan.meals.map((m) => (
-              <tr key={m.id}>
-                <td className="font-bold">{m.slot}</td><td>{m.slot_time || '—'}</td>
-                <td>{m.items || m.title || '—'}</td><td>{m.portions || '—'}</td>
-                <td className="tnum">{fmt(m.kcal, 0)}</td><td className="tnum">{fmt(m.protein_g)}</td>
-                <td className="tnum">{fmt(m.carbs_g)}</td><td className="tnum">{fmt(m.fat_g)}</td>
-              </tr>
-            ))}
-          </tbody>
-          <tfoot>
-            <tr>
-              <td colSpan="4" className="font-extrabold">المجموع اليومي</td>
-              <td className="tnum font-extrabold">{fmt(totals.kcal, 0)}</td>
-              <td className="tnum font-extrabold">{fmt(totals.protein_g)}</td>
-              <td className="tnum font-extrabold">{fmt(totals.carbs_g)}</td>
-              <td className="tnum font-extrabold">{fmt(totals.fat_g)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </DocSection>
+      {(() => {
+        // الخطة الأسبوعية: جدول لكل يوم («كل يوم» تُضاف لكل الأيام) بمجموعه؛ وإلا جدول واحد
+        const every = plan.meals.filter((m) => m.day_of_week === null || m.day_of_week === undefined);
+        const days = DAYS.map((name, d) => ({ name, d, meals: [...every, ...plan.meals.filter((m) => m.day_of_week === d)] }))
+          .filter((x) => plan.meals.some((m) => m.day_of_week === x.d));
+        const groups = days.length ? days : [{ name: 'الوجبات اليومية', d: null, meals: plan.meals }];
+        const sumOf = (ms) => ms.reduce((t, m) => ({ kcal: t.kcal + (m.kcal || 0), protein_g: t.protein_g + (m.protein_g || 0), carbs_g: t.carbs_g + (m.carbs_g || 0), fat_g: t.fat_g + (m.fat_g || 0) }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+        return groups.map((g) => {
+          const t = days.length ? sumOf(g.meals) : totals;
+          return (
+            <DocSection key={g.name} title={days.length ? `يوم ${g.name}` : g.name}>
+              <table className="keep">
+                <thead><tr>{['الوجبة', 'التوقيت', 'الأصناف', 'الكميات', 'سعرات', 'ب', 'ك', 'د'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {g.meals.map((m) => (
+                    <tr key={`${g.name}-${m.id}`}>
+                      <td className="font-bold">{__t(m.slot)}</td><td>{m.slot_time || '—'}</td>
+                      <td>{m.title && m.items && m.title !== m.items ? <><b>{m.title}</b>: {m.items}</> : (m.items || m.title || '—')}</td><td>{m.portions || '—'}</td>
+                      <td className="tnum">{fmt(m.kcal, 0)}</td><td className="tnum">{fmt(m.protein_g)}</td>
+                      <td className="tnum">{fmt(m.carbs_g)}</td><td className="tnum">{fmt(m.fat_g)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan="4" className="font-extrabold">المجموع اليومي</td>
+                    <td className="tnum font-extrabold">{fmt(t.kcal, 0)}</td>
+                    <td className="tnum font-extrabold">{fmt(t.protein_g)}</td>
+                    <td className="tnum font-extrabold">{fmt(t.carbs_g)}</td>
+                    <td className="tnum font-extrabold">{fmt(t.fat_g)}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </DocSection>
+          );
+        });
+      })()}
 
       {plan.advice && <DocSection title="تعليمات والتزامات">
         <ul className="list-inside list-disc space-y-1 text-[12px]">

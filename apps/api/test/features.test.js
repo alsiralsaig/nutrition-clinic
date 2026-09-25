@@ -113,6 +113,13 @@ try {
   const pAfter = (await req('GET', `/api/patients/${pt.id}`, { token })).json;
   check('مستوى النشاط حُفظ في ملف المريض', pAfter?.activity_level === 'moderate', pAfter?.activity_level);
   const planId = saved.json?.id;
+  check('totals في الأسبوعية = متوسط اليوم (وليس 7 أضعاف)', Math.abs((saved.json?.totals?.kcal || 0) - saved.json?.daily_average?.kcal) < 2 && saved.json?.week_totals?.kcal > 5 * saved.json?.daily_average?.kcal, JSON.stringify({ t: saved.json?.totals?.kcal, w: saved.json?.week_totals?.kcal }));
+  const plist = await req('GET', `/api/diet-plans?patient_id=${pt.id}`, { token });
+  const pl = plist.json?.items?.find((x) => x.id === planId);
+  check('قائمة البرامج: سعرات الأسبوعية يومية + عدد الأيام', pl && Math.abs(pl.kcal_total - saved.json.daily_average.kcal) <= 2 && pl.days_count === 7, JSON.stringify(pl && { k: pl.kcal_total, d: pl.days_count }));
+  const profW = await req('GET', `/api/patients/${pt.id}/profile`, { token });
+  const pp = profW.json?.plans?.find((x) => x.id === planId);
+  check('ملف المريض: الخطة الأسبوعية بمجاميع يومية وأيام', pp?.weekly === true && Math.abs(pp.totals.kcal - saved.json.daily_average.kcal) < 2 && pp.by_day?.length === 7, JSON.stringify(pp?.totals));
   await req('POST', `/api/diet-plans/${planId}/activate`, { token });
 
   const noData = (await req('POST', '/api/patients', { token, body: { first_name: 'بلا', last_name: 'قياسات' } })).json;
@@ -199,6 +206,9 @@ try {
   check('CSV بعناوين إنجليزية (lang=en)', csvEn.text.includes('Adherence %') && csvEn.text.includes('Patient'));
   const meals = await req('GET', '/api/reports/export/meals', { token });
   check('تصدير وجبات الخطط CSV (باليوم)', meals.text.includes('السبت') && meals.text.includes('المكونات'));
+  const rj = await req('GET', `/api/reports/revenue?from=${addDays(today, -365)}&to=${today}`, { token });
+  const sumOk = (rj.json?.by_month_service || []).every((m) => Math.abs((rj.json.services || []).reduce((t, sv) => t + (m[sv] || 0), 0) - m.total) < 0.05);
+  check('الإيراد شهر × خدمة: مجموع الخدمات = إجمالي الشهر', rj.status === 200 && rj.json.by_month_service?.length > 0 && rj.json.services?.length > 0 && sumOk, JSON.stringify(rj.json?.by_month_service?.[0]));
   const rv = await req('GET', `/api/reports/revenue.csv?from=${addDays(today, -365)}&to=${today}`, { token });
   check('تقرير الإيرادات CSV', rv.status === 200 && rv.text.includes('المبلغ'));
   const msgs = await req('GET', '/api/reports/export/messages', { token });

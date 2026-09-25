@@ -1,4 +1,5 @@
 // تسميات عربية وتنسيق أرقام وتواريخ — مصدر واحد للاتساق في كل الشاشات
+import { LOCALE, TIME_LOCALE } from './i18n.js';
 export const VISIT_TYPES = {
   initial: { label: 'أولى', color: 'bg-brand-100 text-brand-800' },
   followup: { label: 'متابعة', color: 'bg-leaf-100 text-leaf-600' },
@@ -10,7 +11,7 @@ export const VISIT_TYPES = {
 export const APPT_STATUS = {
   scheduled: { label: 'مجدول', color: 'bg-brand-100 text-brand-800', dot: '#229a92' },
   confirmed: { label: 'مؤكد', color: 'bg-leaf-100 text-leaf-600', dot: '#5aa843' },
-  done: { label: 'تمت', color: 'bg-ink/10 text-ink/70', dot: '#1c2b2a' },
+  done: { label: 'تمت', color: 'bg-ink/10 text-ink/70', dot: '#7c8b89' },
   cancelled: { label: 'ملغي', color: 'bg-clay-100 text-clay-600', dot: '#c9604a' },
   no_show: { label: 'لم يحضر', color: 'bg-sun-100 text-sun-600', dot: '#d69a19' },
 };
@@ -37,6 +38,7 @@ export const ROLES = {
 
 export const GENDERS = { male: 'ذكر', female: 'أنثى' };
 
+// i18n-ignore — أسماء الوجبات تُخزَّن في القاعدة كما هي؛ تُترجم عند العرض فقط بـ __t(slot)
 export const MEAL_SLOTS = ['الفطور', 'سناك صباحي', 'الغداء', 'سناك عصري', 'العشاء', 'قبل التمرين', 'بعد التمرين'];
 
 export const fmt = (n, d = 1) =>
@@ -49,11 +51,11 @@ export const money = (n, currency = '') =>
 
 export const CURRENCY_AR = { SDG: 'ج.س', EGP: 'ج.م', SAR: 'ر.س', AED: 'د.إ', USD: '$' };
 
-const AR_DATE = new Intl.DateTimeFormat('ar-u-nu-latn-ca-gregory', {
+const AR_DATE = new Intl.DateTimeFormat(LOCALE, {
   weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
 });
-const AR_SHORT = new Intl.DateTimeFormat('ar-u-nu-latn-ca-gregory', { day: 'numeric', month: 'short', year: 'numeric' });
-const AR_MONTH = new Intl.DateTimeFormat('ar-u-nu-latn-ca-gregory', { month: 'long', year: 'numeric' });
+const AR_SHORT = new Intl.DateTimeFormat(LOCALE, { day: 'numeric', month: 'short', year: 'numeric' });
+const AR_MONTH = new Intl.DateTimeFormat(LOCALE, { month: 'long', year: 'numeric' });
 
 export const todayISO = () => {
   const d = new Date(); const p = (n) => String(n).padStart(2, '0');
@@ -83,7 +85,7 @@ export const dateTime = (s) => {
   if (!s) return '—';
   const d = new Date(String(s).replace(' ', 'T'));
   if (Number.isNaN(d.getTime())) return String(s);
-  return `${AR_SHORT.format(d)} — ${d.toLocaleTimeString('ar-EG-hijri', { hour: '2-digit', minute: '2-digit', numberingSystem: 'latn' })}`;
+  return `${AR_SHORT.format(d)} — ${d.toLocaleTimeString(TIME_LOCALE, { hour: '2-digit', minute: '2-digit' })}`;
 };
 export const relativeDays = (iso) => {
   const d = parse(iso);
@@ -106,6 +108,7 @@ export const bmiTone = (bmi) => {
 
 export const initials = (p) => `${(p?.first_name || '')[0] || ''}${(p?.last_name || '')[0] || ''}`.trim() || '؟';
 
+// i18n-ignore
 export const MEAL_FALLBACK_TIME = {
   'الفطور': '08:00', 'سناك صباحي': '11:00', 'الغداء': '14:00', 'سناك عصري': '17:00', 'العشاء': '20:00',
 };

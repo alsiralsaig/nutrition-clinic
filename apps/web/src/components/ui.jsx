@@ -125,7 +125,7 @@ export function Toggle({ checked, onChange, label }) {
     <button type="button" role="switch" aria-checked={!!checked} onClick={() => onChange(!checked)}
       className="inline-flex items-center gap-2 text-[13px] font-bold text-ink/70">
       <span className={`relative h-6 w-11 rounded-full transition ${checked ? 'bg-brand-600' : 'bg-ink/15'}`}>
-        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${checked ? 'right-0.5' : 'right-[calc(100%-1.375rem)]'}`} />
+        <span className={`absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all ${checked ? 'start-0.5' : 'start-[calc(100%-1.375rem)]'}`} />
       </span>
       {label}
     </button>
@@ -152,9 +152,9 @@ export function Modal({ open, onClose, title, subtitle, children, footer, size =
   if (!open) return null;
   const widths = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' };
   return (
-    <div className="no-print fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/45 p-3 backdrop-blur-[2px] sm:p-6"
+    <div className="no-print fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[#0b1413]/50 p-3 backdrop-blur-[2px] sm:p-6"
       onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}>
-      <div role="dialog" aria-modal="true" className={`pop-in my-auto w-full ${widths[size]} rounded-xl2 bg-white shadow-pop`}>
+      <div role="dialog" aria-modal="true" className={`pop-in my-auto w-full ${widths[size]} rounded-xl2 bg-surface shadow-pop`}>
         <header className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
           <div className="flex items-start gap-3">
             {icon && <span className="mt-0.5 grid h-9 w-9 place-items-center rounded-xl bg-brand-50 text-[16px] text-brand-700">{icon}</span>}
@@ -203,13 +203,13 @@ export function PrintSheet({ open, onClose, children, title, actions }) {
   }, [open, onClose]);
   if (!open) return null;
   return createPortal(
-    <div className="print-portal fixed inset-0 z-[60] overflow-auto bg-ink/50 p-0 backdrop-blur-[1px] sm:p-6 print:static print:block print:overflow-visible print:bg-white print:p-0 print:backdrop-blur-none">
+    <div className="print-portal fixed inset-0 z-[60] overflow-auto bg-[#0b1413]/55 p-0 backdrop-blur-[1px] sm:p-6 print:static print:block print:overflow-visible print:bg-white print:p-0 print:backdrop-blur-none">
       <div className="mx-auto flex max-w-[900px] items-center justify-between gap-3 px-4 py-3 no-print">
         <span className="text-[13px] font-bold text-white/90">معاينة للطباعة · {title}</span>
         <div className="flex gap-2">
           {actions}
           <button className="btn-primary btn-sm" onClick={() => window.print()}><Icon.pdf /> حفظ PDF</button>
-          <button className="btn-ghost btn-sm bg-white/90" onClick={onClose}><Icon.close /> إغلاق</button>
+          <button className="btn-ghost btn-sm bg-surface/90" onClick={onClose}><Icon.close /> إغلاق</button>
         </div>
       </div>
       <div className="print-doc mx-auto max-w-[860px] bg-white p-7 shadow-pop sm:mb-10 sm:rounded-lg print:mx-0 print:max-w-none print:p-0 print:shadow-none">
@@ -248,7 +248,7 @@ export function ErrorBox({ error, retry }) {
       <p className="flex items-center gap-2 text-[13px] font-bold text-clay-600">
         <Icon.alert /> تعذّر تحميل البيانات: {error.message}
       </p>
-      {retry && <button className="btn-ghost btn-sm bg-white" onClick={retry}>إعادة المحاولة</button>}
+      {retry && <button className="btn-ghost btn-sm bg-surface" onClick={retry}>إعادة المحاولة</button>}
     </div>
   );
 }
