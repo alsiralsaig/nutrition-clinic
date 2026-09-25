@@ -1,14 +1,15 @@
 // محاكاة تشغيل Vercel محلياً: نفس ملف الدالة، مع VERCEL=1 وقرص مؤقت
 // node scripts/simulate-vercel.mjs
 import { spawn } from 'node:child_process';
+process.env.VERCEL = '1'; // حتى لا يستدعي الأب listen عند استيراد الجسور
 import fs from 'node:fs';
 
-const PORT = 4124;
+const PORT = 4100 + Math.floor(Math.random() * 400); // منفذ عشوائي: لا تعارض مع عملية متبقية
 const BASE = `http://127.0.0.1:${PORT}`;
 fs.rmSync('/tmp/clinic', { recursive: true, force: true });
 
 const child = spawn(process.execPath, ['-e', `
-  import('./api/[[...path]].js').then(({ default: app }) => {
+  import('./api/auth/[...path].js').then(({ default: app }) => {
     app.listen(${PORT}, '127.0.0.1', () => console.log('ready'));
   }).catch((e) => { console.error('IMPORT_FAIL', e.message); process.exit(1); });
 `], {
@@ -32,7 +33,7 @@ const j = async (m, p, b, t) => {
 };
 
 for (let i = 0; i < 60 && !log.includes('ready'); i++) await new Promise((r) => setTimeout(r, 250));
-check('الدالة تُحمَّل بـ VERCEL=1 بدون listen مزدوج', log.includes('ready'), log.slice(0, 300));
+check('جسر Vercel (api/< بادئة >/[...path].js) يُحمَّل بـ VERCEL=1 بلا listen مزدوج', log.includes('ready'), log.slice(0, 300));
 
 const h = await j('GET', '/api/health');
 check('/api/health يعمل ويُعلن الوضع المؤقت', h.json?.mode === 'demo-ephemeral', JSON.stringify(h.json));
@@ -49,12 +50,32 @@ check('كتابة مريض جديد تنجح (journal_mode = DELETE)', created.s
 const list = await j('GET', '/api/patients?q=' + encodeURIComponent('مؤقت'), null, t);
 check('الكتابة تُقرأ فوراً داخل نفس الحاوية', list.json?.items?.length === 1, JSON.stringify(list.json?.total));
 
+// كل ملفات الجسور يجب أن تصدّر نفس الكائن (لا جسر ميت)
+const bridgeFiles = fs.readdirSync(new URL('../api', import.meta.url), { recursive: true }).map(String).filter((f) => f.endsWith('.js'));
+let badBridge = '';
+for (const f of bridgeFiles) {
+  const enc = f.split('/').map(encodeURIComponent).join('/'); // الأقواس مسموحة في أسماء ملفات Vercel لكنها تحتاج ترميزاً في URL
+  const m = await import(new URL('../api/' + enc, import.meta.url).href);
+  if (typeof m.default?.use !== 'function') { badBridge = f; break; }
+}
+check(`كل جسور /api (${bridgeFiles.length} ملفاً) تصدّر تطبيق Express`, !badBridge, badBridge);
+
+// مسارات أعمق (كانت تسقط 404 على Vercel) — يجب أن يخدمها Express نفسه
+const deep1 = await j('GET', '/api/patients/1/profile', null, t);
+const deep2 = await j('GET', '/api/dashboard/summary', null, t);
+const deep3 = await j('GET', '/api/reports/weight-progress/1', null, t);
+check('مسار بثلاثة مقاطع /api/patients/1/profile', deep1.status === 200, `status=${deep1.status} ${JSON.stringify(deep1.json).slice(0,120)}`);
+check('مسار بمقطعَين /api/dashboard/summary', deep2.status === 200, `status=${deep2.status}`);
+check('تقرير /api/reports/weight-progress/1', deep3.status === 200, `status=${deep3.status}`);
+const doc = await j('GET', '/api/openapi.json');
+check('ملف التوثيق متاح تحت /api/openapi.json', doc.status === 200 && !!doc.json?.openapi, `status=${doc.status}`);
+
 // ── محاكاة «حاوية جديدة»: عملية أخرى بنفس التوكن ──
 child.kill('SIGTERM');
-await new Promise((r) => setTimeout(r, 600));
+await Promise.race([new Promise((r) => child.once('exit', r)), new Promise((r) => setTimeout(r, 4000))]);
 
 const second = spawn('node', ['-e', `
-  import('./api/[[...path]].js').then(({ default: app }) => app.listen(${PORT}, '127.0.0.1', () => console.log('ready2')));
+  import('./api/auth/[...path].js').then(({ default: app }) => app.listen(${PORT}, '127.0.0.1', () => console.log('ready2')));
 `], { env: { ...process.env, VERCEL: '1', VERCEL_ENV: 'production', NODE_ENV: 'production' }, cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
 let log2 = '';
 second.stdout.on('data', (d) => { log2 += d; });

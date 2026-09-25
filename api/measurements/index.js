@@ -1,0 +1,4 @@
+// مُولَّد بواسطة scripts/gen-vercel-bridges.mjs — لا تحرّره يدوياً.
+// نفس تطبيق Express المحلي، بلا أي منطق مكرر.
+// يخدم /api/measurements تماماً
+export { default as default } from '../../apps/api/src/server.js';

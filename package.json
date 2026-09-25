@@ -17,7 +17,9 @@
     "seed": "npm run seed -w apps/api",
     "test:api": "node apps/api/test/smoke.test.js",
     "test:ui": "node apps/web/test/ui.test.mjs",
-    "deploy:check": "node scripts/check-vercel-config.mjs"
+    "deploy:check": "node scripts/gen-vercel-bridges.mjs && node scripts/check-vercel-config.mjs",
+    "deploy:bridges": "node scripts/gen-vercel-bridges.mjs",
+    "deploy:sim": "node scripts/simulate-vercel.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",

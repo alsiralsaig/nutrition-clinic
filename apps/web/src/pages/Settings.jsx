@@ -338,7 +338,7 @@ function MobileTab() {
     ['نفس قاعدة البيانات', 'تطبيق المريض (Flutter أو React Native) يستدعي نفس REST API — لا نسخة ثانية من البيانات ولا مزامنة يدوية.'],
     ['نقطة دخول واحدة للمريض', 'GET /api/patients/{id}/profile يرجّع البيانات والبرنامج الغذائي والمواعيد والقياسات والمدفوعات في طلب واحد.'],
     ['دخول بالهاتف أو كود', 'المصادقة JWT؛ لإتاحة تسجيل ذاتي للمرضى يُضاف عمود access_code على جدول المرضى وقراءة بمعرّف المريض نفسه.'],
-    ['توثيق آلي', 'ملف openapi.json على /openapi.json يولّد كود الشبكة في التطبيق تلقائياً (OpenAPI Generator).'],
+    ['توثيق آلي', 'ملف openapi.json متاح على /api/openapi.json (و/on /openapi.json عند التشغيل المحلي) ويولّد كود الشبكة في التطبيق تلقائياً (OpenAPI Generator).'],
     ['نفس الحسابات', 'BMI والماكرو والإيرادات تُحسب في الخادم، فلا يختلف الرقم بين الموقع والتطبيق.'],
   ];
   return (
@@ -359,7 +359,7 @@ function MobileTab() {
           <code className="mt-2 block break-all rounded-xl bg-ink px-3 py-2.5 text-[12px] font-bold text-white" dir="ltr">{origin}/api</code>
           <div className="mt-3 flex flex-wrap gap-2">
             <button className="btn-ghost btn-sm" onClick={() => navigator.clipboard?.writeText(`${origin}/api`).then(() => toast('تم نسخ عنوان الـ API', 'good')).catch(() => toast('انسخ العنوان يدوياً', 'warn'))}><Icon.copy /> نسخ</button>
-            <a className="btn-soft btn-sm" href="/openapi.json" target="_blank" rel="noreferrer"><Icon.pdf /> openapi.json</a>
+            <a className="btn-soft btn-sm" href="/api/openapi.json" target="_blank" rel="noreferrer"><Icon.pdf /> openapi.json</a>
           </div>
         </Card>
         <Card title="خطوات التفعيل للمريض" icon={<Icon.check />}>

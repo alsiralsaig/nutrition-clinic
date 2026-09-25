@@ -21,6 +21,8 @@ jobs:
 
       - name: Build web
         run: npm run build
+      - name: فحص إعداد Vercel (تغطية جسور /api)
+        run: npm run deploy:check
 
       - name: API smoke tests (85 checks)
         run: npm run test:api

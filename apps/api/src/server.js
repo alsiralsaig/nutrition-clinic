@@ -61,6 +61,16 @@ app.get('/api/health', (req, res) => {
 });
 app.use('/api/auth', authRoutes);
 
+// ---------- مستندات الـ API لتطبيق الموبايل (قبل مسار الـ SPA العام) ----------
+const OPENAPI_FILE = path.join(__dirname, '..', 'openapi.json');
+function sendOpenApi(req, res) {
+  if (fs.existsSync(OPENAPI_FILE)) return res.type('json').send(fs.readFileSync(OPENAPI_FILE, 'utf8'));
+  res.status(404).json({ error: 'openapi.json غير موجود' });
+}
+app.get('/openapi.json', sendOpenApi);
+// على Vercel لا توجد مسارات خارج /api (الدوال تعيش هناك)، فليكن الملف متاحاً تحت البادئتين
+app.get('/api/openapi.json', sendOpenApi);
+
 // ---------- مسارات محمية ----------
 const protectedApi = express.Router();
 protectedApi.use(authRequired);
@@ -73,13 +83,6 @@ protectedApi.use('/dashboard', dashboardRoutes);
 protectedApi.use('/reports', reportRoutes);
 protectedApi.use('/', systemRoutes);       // /settings /backup /restore /maintenance
 app.use('/api', protectedApi);
-
-// ---------- مستندات الـ API لتطبيق الموبايل (قبل مسار الـ SPA العام) ----------
-const OPENAPI_FILE = path.join(__dirname, '..', 'openapi.json');
-app.get('/openapi.json', (req, res) => {
-  if (fs.existsSync(OPENAPI_FILE)) return res.type('json').send(fs.readFileSync(OPENAPI_FILE, 'utf8'));
-  res.status(404).json({ error: 'openapi.json غير موجود' });
-});
 
 // ---------- واجهة الويب (بعد npm run build) ----------
 if (fs.existsSync(path.join(WEB_DIST, 'index.html'))) {
