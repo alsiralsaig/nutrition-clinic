@@ -10,10 +10,11 @@
     "seed": "node src/seed.js"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.2.17",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.5.0",
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "jsonwebtoken": "^9.0.2"
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.23.0"
   }
 }

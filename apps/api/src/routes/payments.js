@@ -1,6 +1,6 @@
 // المدفوعات والإيرادات
 import { Router } from 'express';
-import { db, audit, getSettings } from '../db.js';
+import { db, audit, getSetting, TODAY } from '../db.js';
 import { badRequest, notFound, str, wrap, isDate, toNum, todayISO } from '../lib.js';
 import { canWrite, adminOnly } from '../auth.js';
 
@@ -14,7 +14,7 @@ const SELECT = `
   FROM payments pa JOIN patients p ON p.id = pa.patient_id
   LEFT JOIN users u ON u.id = pa.recorded_by`;
 
-function normalize(body, existing = {}) {
+async function normalize(body, existing = {}) {
   const out = {
     patient_id: Number(body.patient_id ?? existing.patient_id),
     appointment_id: body.appointment_id !== undefined ? (body.appointment_id ? Number(body.appointment_id) : null) : (existing.appointment_id ?? null),
@@ -29,11 +29,11 @@ function normalize(body, existing = {}) {
   if (!isDate(out.paid_on)) throw badRequest('تاريخ الدفع مطلوب بصيغة YYYY-MM-DD');
   if (out.amount === null || out.amount <= 0) throw badRequest('المبلغ يجب أن يكون أكبر من صفر');
   if (!out.service) throw badRequest('نوع الخدمة مطلوب');
-  if (!db.prepare(`SELECT id FROM patients WHERE id=?`).get(out.patient_id)) throw badRequest('رقم المريض غير موجود');
+  if (!(await db.get(`SELECT id FROM patients WHERE id=?`, out.patient_id))) throw badRequest('رقم المريض غير موجود');
   return out;
 }
 
-router.get('/', wrap((req, res) => {
+router.get('/', wrap(async (req, res) => {
   const where = [];
   const params = {};
   if (req.query.patient_id) { where.push(`pa.patient_id = @patient_id`); params.patient_id = Number(req.query.patient_id); }
@@ -41,79 +41,82 @@ router.get('/', wrap((req, res) => {
   if (isDate(String(req.query.to || ''))) { where.push(`pa.paid_on <= @to`); params.to = req.query.to; }
   if (METHODS.includes(String(req.query.method || ''))) { where.push(`pa.method = @method`); params.method = req.query.method; }
   if (req.query.q) {
-    where.push(`(p.first_name LIKE @q OR p.last_name LIKE @q OR p.file_no LIKE @q OR pa.service LIKE @q OR IFNULL(pa.invoice_no,'') LIKE @q)`);
+    where.push(`(p.first_name ILIKE @q OR p.last_name ILIKE @q OR p.file_no ILIKE @q OR pa.service ILIKE @q OR COALESCE(pa.invoice_no,'') ILIKE @q)`);
     params.q = `%${req.query.q}%`;
   }
-  const items = db.prepare(`
+  const items = await db.all(`
     ${SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY pa.paid_on DESC, pa.id DESC LIMIT 500
-  `).all(params);
+  `, params);
   const valid = items.filter((i) => !i.voided);
   res.json({
     items,
     total: Math.round(valid.reduce((s, i) => s + i.amount, 0) * 100) / 100,
     count: items.length,
-    currency: getSettings()['clinic.currency'] || 'SDG',
+    currency: await getSetting('clinic.currency', 'SDG'),
   });
 }));
 
 /** ملخص الإيرادات: شهري + حسب الخدمة + حسب الطريقة */
-router.get('/summary', wrap((req, res) => {
+router.get('/summary', wrap(async (req, res) => {
   const months = Math.min(Math.max(Number(req.query.months) || 12, 1), 36);
-  const monthly = db.prepare(`
-    SELECT substr(paid_on,1,7) AS month, ROUND(SUM(amount),2) AS total, COUNT(*) AS payments
+  const monthly = (await db.all(`
+    SELECT substr(paid_on,1,7) AS month, ROUND(SUM(amount)::numeric,2) AS total, COUNT(*) AS payments
     FROM payments WHERE voided = 0 GROUP BY month ORDER BY month DESC LIMIT ?
-  `).all(months).reverse();
-  const byService = db.prepare(`
-    SELECT service, ROUND(SUM(amount),2) AS total, COUNT(*) AS n
+  `, months)).reverse();
+  const byService = await db.all(`
+    SELECT service, ROUND(SUM(amount)::numeric,2) AS total, COUNT(*) AS n
     FROM payments WHERE voided = 0 GROUP BY service ORDER BY total DESC LIMIT 12
-  `).all();
-  const byMethod = db.prepare(`
-    SELECT method, ROUND(SUM(amount),2) AS total, COUNT(*) AS n
+  `);
+  const byMethod = await db.all(`
+    SELECT method, ROUND(SUM(amount)::numeric,2) AS total, COUNT(*) AS n
     FROM payments WHERE voided = 0 GROUP BY method ORDER BY total DESC
-  `).all();
-  const today = db.prepare(`SELECT COALESCE(ROUND(SUM(amount),2),0) AS t, COUNT(*) AS n FROM payments WHERE voided=0 AND paid_on=?`).get(todayISO());
-  const month = db.prepare(`SELECT COALESCE(ROUND(SUM(amount),2),0) AS t, COUNT(*) AS n FROM payments WHERE voided=0 AND substr(paid_on,1,7)=substr(?,1,7)`).get(todayISO());
-  res.json({ monthly, byService, byMethod, today, month, currency: getSettings()['clinic.currency'] || 'SDG' });
+  `);
+  const t = todayISO();
+  const today = await db.get(`SELECT COALESCE(ROUND(SUM(amount)::numeric,2),0) AS t, COUNT(*) AS n FROM payments WHERE voided=0 AND paid_on=?`, t);
+  const month = await db.get(`SELECT COALESCE(ROUND(SUM(amount)::numeric,2),0) AS t, COUNT(*) AS n FROM payments WHERE voided=0 AND substr(paid_on,1,7)=?`, t.slice(0, 7));
+  res.json({ monthly, byService, byMethod, today, month, currency: await getSetting('clinic.currency', 'SDG') });
 }));
 
-router.post('/', canWrite(), wrap((req, res) => {
-  const data = normalize(req.body);
-  const info = db.prepare(`
+router.post('/', canWrite(), wrap(async (req, res) => {
+  const data = await normalize(req.body);
+  const newId = await db.insert(`
     INSERT INTO payments (patient_id, appointment_id, paid_on, service, amount, currency, method, invoice_no, note, recorded_by)
     VALUES (@patient_id, @appointment_id, @paid_on, @service, @amount, @currency, @method, @invoice_no, @note, @recorded_by)
-  `).run({ ...data, currency: getSettings()['clinic.currency'] || 'SDG', recorded_by: req.user.id });
-  audit({ userId: req.user.id, action: 'payment.create', entity: 'payments', entityId: info.lastInsertRowid, detail: { amount: data.amount } });
-  res.status(201).json(db.prepare(`${SELECT} WHERE pa.id = ?`).get(info.lastInsertRowid));
+  `, { ...data, currency: await getSetting('clinic.currency', 'SDG'), recorded_by: req.user.id });
+  await audit({ userId: req.user.id, action: 'payment.create', entity: 'payments', entityId: newId, detail: { amount: data.amount } });
+  res.status(201).json(await db.get(`${SELECT} WHERE pa.id = ?`, newId));
 }));
 
-router.put('/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare(`SELECT * FROM payments WHERE id=?`).get(id);
+  const existing = await db.get(`SELECT * FROM payments WHERE id=?`, id);
   if (!existing) throw notFound('الدفع غير موجود');
-  const data = normalize(req.body, existing);
-  db.prepare(`
+  const data = await normalize(req.body, existing);
+  await db.run(`
     UPDATE payments SET patient_id=@patient_id, appointment_id=@appointment_id, paid_on=@paid_on,
       service=@service, amount=@amount, method=@method, invoice_no=@invoice_no, note=@note WHERE id=@id
-  `).run({ ...data, id });
-  audit({ userId: req.user.id, action: 'payment.update', entity: 'payments', entityId: id });
-  res.json(db.prepare(`${SELECT} WHERE pa.id = ?`).get(id));
+  `, { ...data, id });
+  await audit({ userId: req.user.id, action: 'payment.update', entity: 'payments', entityId: id });
+  res.json(await db.get(`${SELECT} WHERE pa.id = ?`, id));
 }));
 
 /** إلغاء بدل الحذف: الإيراد يبقى شفافاً ولا يُمحى أثره */
-router.post('/:id(\\d+)/void', canWrite(), wrap((req, res) => {
+router.post('/:id(\\d+)/void', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare(`SELECT * FROM payments WHERE id=?`).get(id);
+  const existing = await db.get(`SELECT * FROM payments WHERE id=?`, id);
   if (!existing) throw notFound('الدفع غير موجود');
-  db.prepare(`UPDATE payments SET voided = 1, note = IFNULL(note,'') || ' — أُلغي بتاريخ ' || date('now') WHERE id=?`).run(id);
-  audit({ userId: req.user.id, action: 'payment.void', entity: 'payments', entityId: id });
-  res.json(db.prepare(`${SELECT} WHERE pa.id = ?`).get(id));
+  if (!existing.voided) {
+    await db.run(`UPDATE payments SET voided = 1, note = COALESCE(note,'') || ' — أُلغي بتاريخ ' || ${TODAY} WHERE id=?`, id);
+    await audit({ userId: req.user.id, action: 'payment.void', entity: 'payments', entityId: id });
+  }
+  res.json(await db.get(`${SELECT} WHERE pa.id = ?`, id));
 }));
 
-router.delete('/:id(\\d+)', adminOnly(), wrap((req, res) => {
+router.delete('/:id(\\d+)', adminOnly(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!db.prepare(`SELECT id FROM payments WHERE id=?`).get(id)) throw notFound();
-  db.prepare(`DELETE FROM payments WHERE id=?`).run(id);
-  audit({ userId: req.user.id, action: 'payment.delete', entity: 'payments', entityId: id });
+  if (!(await db.get(`SELECT id FROM payments WHERE id=?`, id))) throw notFound();
+  await db.run(`DELETE FROM payments WHERE id=?`, id);
+  await audit({ userId: req.user.id, action: 'payment.delete', entity: 'payments', entityId: id });
   res.json({ deleted: true, id });
 }));

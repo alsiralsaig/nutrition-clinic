@@ -27,8 +27,10 @@ npm run dev                 # يشغّل الخادم على 4000 والواجه
 
 ⚠️ **أول خطوة بعد التشغيل:** من `الإعدادات ← المستخدمون والصلاحيات ← تغيير كلمتي السرية` غيّر كلمات المرور التجريبية.
 
-البيانات التجريبية (14 مريضاً بزياراتهم وقياساتهم وخططهم ومدفوعاتهم) تُزرع تلقائياً عند أول تشغيل لقاعدة فارغة.
-لبدء قاعدة نظيفة احذف `apps/api/.data/clinic.sqlite*` ثم أعد التشغيل (وأزل استدعاء `ensureSeed` من `server.js` إن أردت منع البذرة نهائياً).
+البيانات التجريبية (14 مريضاً بزياراتهم وقياساتهم وخططهم ومدفوعاتهم + حسابا doctor/reception) تُزرع تلقائياً
+عند أول تشغيل **محلي** لقاعدة فارغة. على قاعدة الإنتاج (Neon عبر `DATABASE_URL`) لا تُزرع: يُنشأ حساب `admin` وحده
+وتظهر لافتة حمراء حتى تُغيَّر كلمة مروره. `SEED_DEMO=1` أو `0` يفرض الخيار في أي بيئة.
+لبدء قاعدة محلية نظيفة احذف المجلد `apps/api/.data/pgdata` ثم أعد التشغيل.
 
 ### الوضع المُنتِج (منفذ واحد فقط)
 
@@ -44,10 +46,10 @@ npm run start          # Express يقدّم الواجهة + الـ API على h
 ```
 nutrition-clinic/
 ├── apps/
-│   ├── api/                     # Express + SQLite (better-sqlite3) + JWT
+│   ├── api/                     # Express + PostgreSQL (pg / PGlite) + JWT
 │   │   ├── src/server.js        # نقطة التشغيل وتقديم واجهة الويب بعد البناء
-│   │   ├── src/schema.sql       # مخطط قاعدة البيانات (10 جداول + منظر)
-│   │   ├── src/db.js            # الاتصال + الترحيل + الإعدادات + سجل التدقيق
+│   │   ├── src/schema.sql       # مخطط PostgreSQL (11 جدولاً + منظر) — يُطبَّق تلقائياً عند الإقلاع
+│   │   ├── src/db.js            # طبقة قاعدة واحدة: Neon/Postgres أو PGlite محلياً + معاملات + تدقيق
 │   │   ├── src/auth.js          # JWT + bcrypt + أدوار
 │   │   ├── src/lib.js           # كل الحسابات (BMI، الماكرو، الإجماليات) والتحقق
 │   │   ├── src/seed.js          # حسابات افتراضية + بيانات تجريبية
@@ -60,14 +62,20 @@ nutrition-clinic/
 │       │                        # Appointments · Plans · Payments · Reports · Settings
 │       ├── src/components/      # Layout · ui · Charts · Forms · PrintDocs · PatientForm
 │       ├── src/api.js           # عميل REST موحّد
-│       └── test/ui.test.mjs     # 42 فحصاً يشغّل الواجهة فعلياً في jsdom
+│       └── test/ui.test.mjs     # 44 فحصاً يشغّل الواجهة فعلياً في jsdom
 ├── package.json                 # أوامر الجذر (dev · build · start · seed · test)
-└── .github/workflows/ci.yml     # بناء + اختبارات API في GitHub Actions
+└── .github/workflows/ci.yml     # بناء + اختبارات على PostgreSQL 17 حقيقي في GitHub Actions
 ```
 
-**قاعدة البيانات:** ملف SQLite واحد في `apps/api/.data/clinic.sqlite` (يمكن تغيير مساره بـ `CLINIC_DB_PATH`).
-اخترنا SQLite لأنه قاعدة حقيقية متعددة المستخدمين عبر خادم مركزي، بلا خدمة خارجية لإدارتها، وسهل نقلها/نسخها،
-ويمكن ترحيلها إلى PostgreSQL دون تغيير مسارات الـ API (انظر §7).
+**قاعدة البيانات: PostgreSQL فقط، بمحركين يتكلمان نفس اللهجة** (نفس الكود ونفس الاستعلامات):
+
+| البيئة | المحرك | أين تُحفظ البيانات |
+|---|---|---|
+| الإنتاج (Vercel + Neon) | `pg` عبر `DATABASE_URL` | Neon — دائمة، ومنها سيقرأ تطبيق الموبايل |
+| تشغيل محلي بلا إعداد | PGlite (Postgres مدمج داخل Node، لا يحتاج تثبيتاً) | `apps/api/.data/pgdata` على جهازك |
+| Vercel **بدون** قاعدة مربوطة | PGlite في الذاكرة | لا مكان — وضع تجريبي بلافتة صفراء |
+
+أي Postgres ≥ 14 يعمل كما هو (Neon، Supabase، Railway، خادم خاص): فقط ضع رابطه في `DATABASE_URL`.
 
 ---
 
@@ -145,9 +153,12 @@ nutrition-clinic/
 ```bash
 PORT=4000                 # منفذ الخادم
 HOST=0.0.0.0
-CLINIC_DB_PATH=/srv/clinic.sqlite    # مسار قاعدة البيانات
-CLINIC_DATA_DIR=apps/api/.data       # أو المجلد فقط
-JWT_SECRET=<سلسلة-longة>  # إن لم تُضف يُولَّد ملف apps/api/.jwt-secret تلقائياً
+DATABASE_URL=postgres://…  # Neon/Postgres (يضيفه Vercel تلقائياً عند ربط Neon). بدونه: PGlite محلي
+CLINIC_DATA_DIR=apps/api/.data       # مجلد PGlite المحلي
+SEED_DEMO=1|0             # فرض/منع البيانات التجريبية (الافتراضي: نعم محلياً، لا مع DATABASE_URL)
+CLINIC_TZ=Africa/Khartoum # توقيت «اليوم» للمواعيد والإيرادات (خوادم Vercel تعمل بـ UTC)
+PG_POOL_MAX=3             # حجم مجمع الاتصالات (3 على Vercel افتراضياً)
+JWT_SECRET=<سلسلة-طويلة>  # إن لم تُضف يُولَّد سرّ ويُحفظ داخل القاعدة نفسها
 JWT_TTL=12h
 CORS_ORIGIN=*             # اضبطه على نطاق تطبيق الموبايل/الموقع في الإنتاج
 ADMIN_PASSWORD=...        # كلمة مرور admin عند أول بذرة
@@ -178,31 +189,33 @@ WEB_DIST=apps/web/dist    # مجلد الواجهة المقدمة من Express
 
 ---
 
-## 6) ترحيل البيانات إلى PostgreSQL عند الحاجة
+## 6) قاعدة البيانات PostgreSQL — كيف بُنيت الطبقة
 
-المخطط في `apps/api/src/schema.sql` قياسي؛ الفرق العملي الوحيد:
+* `db.js` يعرض واجهة واحدة async: `db.all / get / run / insert / exec / tx`. المعاملات تُمرَّر عبر
+  `AsyncLocalStorage`، فكل استدعاء `db.*` داخل `db.tx(async () => …)` يذهب تلقائياً لنفس الاتصال.
+* الاستعلامات تُكتب بـ `?` أو `@name` وتُحوَّل إلى `$1..` الخاصة بـ Postgres (مع تخطي النصوص المقتبسة).
+* المخطط يُطبَّق عند كل إقلاع **تحت قفل استشاري** (`pg_advisory_xact_lock`) فلا تتصادم حاويات Vercel
+  التي تُقلع معاً، ويُتخطّى فوراً إذا كان `_schema_version` مطابقاً (ارفع `SCHEMA_VERSION` عند تعديل المخطط).
+* رقم الملف `NC-0001` يُحجز داخل معاملة بقفل، فمريضان يُسجَّلان في نفس الثانية لا يأخذان نفس الرقم.
+* يعمل خلف **PgBouncer بوضع transaction** (وهو ما يفعله رابط Neon المجمَّع) — مُختبَر فعلياً.
+* أخطاء Postgres تُترجم لرسائل عربية: تكرار ← 409، سجل مرتبط غير موجود ← 400، القاعدة غير متاحة ← 503.
 
-| SQLite | PostgreSQL |
-|---|---|
-| `INTEGER PRIMARY KEY AUTOINCREMENT` | `BIGSERIAL PRIMARY KEY` |
-| `datetime('now')` | `now()` |
-| `substr(x,1,7)` | `to_char(x,'YYYY-MM')` |
-| `strftime('%w', date)` | `EXTRACT(ISODOW FROM date)` |
-| `IFNULL` | `COALESCE` |
-
-طبقات البيانات معزولة في `db.js` والمسارات لا تعرف SQLite إلا في الاستعلامات، فالترحيل عمل يوم واحد
-(أو استبدل `better-sqlite3` بـ `pg` + مجلد `migrations/`).
+**الاختبارات على 3 طبقات** (كلها في CI على PostgreSQL 17 حقيقي):
+```bash
+npm run test:api                                        # 85 فحصاً — PGlite
+DATABASE_URL=postgres://… SEED_DEMO=1 npm run test:api  # نفس الـ 85 على Postgres حقيقي
+SIM_DATABASE_URL=postgres://… npm run deploy:sim        # 22 فحصاً: حاويات Vercel + بقاء البيانات
+```
 
 ---
 
 ## 7) النسخ الاحتياطي في التشغيل اليومي
 
-* من `الإعدادات ← النسخ الاحتياطي`: «نسخة JSON» (كل الجداول في ملف واحد) أو «ملف القاعدة» (`.sqlite`).
-* نسخة تلقائية يومية على الخادم (cron):
-  ```bash
-  0 3 * * * cd /srv/nutrition-clinic && node -e "const D=require('better-sqlite3');const db=new D('apps/api/.data/clinic.sqlite');db.pragma('wal_checkpoint(TRUNCATE)')" && cp apps/api/.data/clinic.sqlite /backups/clinic-$(date +\%F).sqlite
-  ```
-* الاستعادة من الواجهة (مدير فقط)، وتُحفظ نسخة أمان للحالة الحالية تلقائياً قبل أي استعادة.
+* من `الإعدادات ← النسخ الاحتياطي`: «نسخة JSON» أو «تنزيل ملف النسخة» — كل الجداول في ملف واحد يُستعاد في أي قاعدة Postgres.
+* Neon نفسه يحتفظ بسجل يسمح بالرجوع لنقطة زمنية قريبة (Point-in-time restore) من لوحة Neon.
+* الاستعادة من الواجهة (مدير فقط)، وقبلها تُحفظ **نسخة أمان داخل القاعدة نفسها** (آخر 5 في `backup_snapshots`،
+  تُنزَّل من `GET /api/backup/snapshots/{id}`) — لأن Vercel لا يملك قرصاً يُحفظ عليه ملف.
+* نسخة يومية خارجية اختيارية: `pg_dump "$DATABASE_URL" > clinic-$(date +%F).sql` من أي جهاز.
 
 ---
 
@@ -217,61 +230,38 @@ WEB_DIST=apps/web/dist    # مجلد الواجهة المقدمة من Express
 
 ## 9) النشر على Vercel
 
-### المرحلة الحالية = **نسخة عرض حيّة** (وضع تجريبي)
-الإعداد موجود في جذر المستودع: `vercel.json` + **جسور `api/<بادئة>/`** التي تصدّر تطبيق Express كما هو
-(نفس الملفات التي تعمل محلياً — لا نسخة ثانية من المنطق). الواجهة تُبنى بـ `npm run build` وتُقدَّم من `apps/web/dist`،
+الإعداد في جذر المستودع: `vercel.json` + **جسور `api/<بادئة>/`** التي تصدّر تطبيق Express كما هو
+(نفس الملفات التي تعمل محلياً). الواجهة تُبنى بـ `npm run build` وتُقدَّم من `apps/web/dist`،
 وأي مسار غير `/api/*` يعود إلى `index.html`.
+
+### ربط قاعدة Neon (خطوة واحدة من لوحة Vercel)
+1. مشروعك على Vercel ← تبويب **Storage** ← **Create Database** ← **Neon** ← المنطقة الأقرب (مثلاً Frankfurt) ← **Create**.
+2. **Connect Project** ← اختر مشروع `nutrition-clinic` وكل البيئات. Vercel يضيف `DATABASE_URL` تلقائياً.
+3. **Deployments** ← آخر نشر ← **Redeploy** (المتغيرات الجديدة لا تصل إلا لنشر جديد).
+4. افتح الرابط ← `/api/health` يجب أن يُظهر `"engine":"postgres"` و`"mode":"persistent"`.
+5. ادخل بـ `admin / admin123` وغيّر كلمة المرور فوراً (اللافتة الحمراء تختفي بعدها).
+
+الجداول تُنشأ وحدها في أول طلب — لا SQL يدوي. العيادة تبدأ نظيفة (بلا مرضى تجريبيين).
+
+| سلوك | بدون Neon (تجريبي) | مع Neon (إنتاج) |
+|---|---|---|
+| المحرك | PGlite في ذاكرة الحاوية | PostgreSQL على Neon |
+| البيانات بعد إعادة تشغيل الحاوية | **تُمسح** وتُزرع بيانات العرض | **محفوظة** |
+| الحسابات | admin + doctor + reception | admin وحده |
+| سرّ `JWT` | ثابت معلن | `JWT_SECRET` إن وُجد، وإلا سرّ عشوائي محفوظ في القاعدة |
+| لافتة | صفراء «وضع تجريبي» | لا شيء (أو حمراء حتى تغيير كلمة المرور) |
 
 > ⚠️ **لا تجمع الجسور في ملف واحد `api/[[...path]].js`.** Vercel لا يبني صيغة الـ catch-all الاختياري
-> داخل `api/` فتُخدم مقاطع العمق واحد فقط، وكل مسار أعمق (`/api/auth/login`, `/api/patients/1/profile`)
-> يرجع `404 NOT_FOUND` من حافة Vercel لا من التطبيق. النمط المدعوم: مجلد لكل بادئة فيه `index.js`
-> (للمسار نفسه) و`[...path].js` (لكل ما تحته). الملفات مُولّدة ومضمونة التغطية:
+> داخل `api/`، فيُخدم عمق مقطع واحد فقط ويرجع كل مسار أعمق (`/api/auth/login`) `404 NOT_FOUND`.
+> النمط المدعوم: مجلد لكل بادئة فيه `index.js` و`[...path].js`. الملفات مُولّدة ومضمونة التغطية:
 >
 > ```bash
-> npm run deploy:bridges   # يولّد 15 × 2 ملفاً من apps/api/openapi.json (مصدر الحقيقة)
-> npm run deploy:check     # يفشل الدفع لو أُضيف مسار بلا جسر، أو رجعت صيغة [[...path]]
-> npm run deploy:sim       # 18 فحصاً يحاكي حاوية Vercel (قرص للقراءة فقط + حاويتان + مسارات عميقة)
+> npm run deploy:bridges   # يولّد الجسور من apps/api/openapi.json (مصدر الحقيقة)
+> npm run deploy:check     # يفشل لو أُضيف مسار بلا جسر، أو رجعت [[...path]]، أو بقيت لهجة SQLite
+> npm run deploy:sim       # يحاكي حاويات Vercel (مع SIM_DATABASE_URL يختبر بقاء البيانات على Postgres)
 > ```
 >
-> ولأن دوال Vercel لا تخدم شيئاً خارج `/api`، فملف التوثيق متاح أيضاً على `/api/openapi.json`
-> (و`/openapi.json` محلياً). الواجهة تُبنى بـ `npm run build` وتُقدَّم من `apps/web/dist`،
-وأي مسار غير `/api/*` يعود إلى `index.html`.
-
-لأن Vercel لا يعطي قرصاً دائماً، يضبط النظام نفسه تلقائياً على هذا الوضع عندما يوجد `process.env.VERCEL`:
-
-| سلوك | على خادم العيادة | على Vercel (الآن) |
-|---|---|---|
-| مكان قاعدة البيانات | `apps/api/.data/clinic.sqlite` | `/tmp/clinic/clinic.sqlite` (مؤقت) |
-| وضع السجل | `WAL` | `DELETE` (لتفادي ملفات ‎-wal/‎-shm) |
-| البيانات بعد إعادة تشغيل الحاوية | محفوظة | **تُمسح وتُزرع بيانات العرض من جديد** |
-| سرّ `JWT` | ملف `apps/api/.jwt-secret` | ثابت معلن لكل الحاويات (وإلا رُفض التوكن بين الحاويات) |
-| لافتة في أعلى الشاشة | لا شيء | «وضع تجريبي على Vercel» |
-
-يتحقق من ذلك `GET /api/health` بحقل `mode`: `demo-ephemeral` أو `persistent`.
-
-**الربط (٤ دقات، بلا كلمة مرور ولا توكن في المحادثة):**
-1. `vercel.com/new` → **Import** → اختر `alsiralsaig/nutrition-clinic` (أعطِ Vercel صلاحية هذا المستودع وحده).
-2. Framework preset: **Other** — الإعدادات كلها تُقرأ من `vercel.json` (`buildCommand` · `outputDirectory` · `framework: vite`).
-3. Environment Variables: أضف `JWT_SECRET` (أي سلسلة طويلة عشوائية) — اختيارية في وضع العرض، **إلزامية للنسخة الحقيقية**.
-4. Deploy. سيعمل البناء على Node 20.x كما هو مثبَّت في `engines`، وكل `git push` على `main` ينشر تلقائياً.
-
-**لاستعراض آمن:** افتح رابط النشر، سجّل بالدخول بحساب `admin/admin123`، تنقّل واطبع — كل شيء يعمل، لكن لا تُدخِل بيانات مريض حقيقية.
-
-فحص محلي قبل الدفع (يحاكي حاوية Vercel على `127.0.0.1`):
-```bash
-npm run deploy:check          # اتساق vercel.json + الجسر + عدم الاستماع المزدوج
-node scripts/simulate-vercel.mjs   # 13 فحصاً: /tmp، البذر التلقائي، صلاحية التوكن عبر حاويتين
-```
-
-### المرحلة التالية = **نفس الرابط لكن بإنتاج حقيقي**
-الحل الوحيد المستدام على Vercel هو قاعدة خارجية؛ الموصى به **Vercel Postgres (Neon)** لأنه يُدار من نفس اللوحة:
-- Hobby يعطي ‎256 MB تخزين و‎60 ساعة حساب مجاناً — يكفى عيادة بهذا الحجم بأريحية.
-- الشغل المطلوب: طبقة بيانات `pg` غير متزامنة مكان `better-sqlite3` (‎164 موضع استدعاء في 10 ملفات) + فروق اللهجة
-  في §6، مع إبقاء نفس المسارات ونفس الاختبارات (‎85 فحصاً ستكون حَكَم equivalence قبل/بعد).
-- نسخة الاحتياطى تصبح JSON فقط (لا ملف قاعدة خام على serverless)، والترحيل من SQLite يُعمل بأمر `npm run migrate:sqlite-to-pg`.
-
-إن أردت **قرصاً دائماً بلا تغيير كود**: انشر على Railway / Render / Fly بمجلد مُثبَّت (volume) ونفس الصورة —
-سأضيف `Dockerfile` و`railway.json` وأضبط `CLINIC_DB_PATH` على مسار الـ volume.
+> ولأن دوال Vercel لا تخدم شيئاً خارج `/api`، فملف التوثيق متاح أيضاً على `/api/openapi.json`.
 
 ## الرخصة
 

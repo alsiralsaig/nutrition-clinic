@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { useApp, useLoader } from '../app-context.jsx';
 import { api, readBackupFile, saveBackupJson } from '../api.js';
 import { Badge, Card, Confirm, Field, Icon, Input, Modal, Select, Spinner, Table, Textarea, Toggle } from '../components/ui.jsx';
@@ -7,9 +8,11 @@ import { ROLES, dateTime } from '../format.js';
 export default function Settings() {
   const { run, user, toast, setUser } = useApp();
   const isAdmin = user?.role === 'admin';
-  const [tab, setTab] = useState('clinic');
+  // القدوم من لافتة «كلمة المرور الافتراضية» يفتح نافذة تغييرها مباشرة
+  const wantsPw = !!useLocation().state?.changePassword;
+  const [tab, setTab] = useState(wantsPw ? 'security' : 'clinic');
   const [restoring, setRestoring] = useState(null);
-  const [pwOpen, setPwOpen] = useState(false);
+  const [pwOpen, setPwOpen] = useState(wantsPw ? { self: true } : false);
   const fileRef = useRef(null);
 
   const { data, loading, error, reload } = useLoader(async () => {
@@ -99,8 +102,8 @@ export default function Settings() {
           <Card title="نسخ احتياطي" subtitle="يُنصح به يومياً قبل أي تعديل كبير" icon={<Icon.db />}>
             <div className="grid gap-2.5 sm:grid-cols-2">
               <button className="btn-primary" onClick={() => run(() => saveBackupJson(), { ok: 'تم تنزيل نسخة JSON' }).catch(() => {})}><Icon.download /> نسخة JSON</button>
-              <button className="btn-ghost" onClick={() => api.download('/backup/file', `clinic-${new Date().toISOString().slice(0, 10)}.sqlite`).catch((e) => toast(e.message, 'bad'))}><Icon.db /> ملف القاعدة</button>
-              <button className="btn-ghost" onClick={() => run(() => api.post('/maintenance/vacuum'), { ok: 'تم تنظيف القاعدة وفحصها' }).catch(() => {})}><Icon.refresh /> فحص وفراغ</button>
+              <button className="btn-ghost" onClick={() => api.download('/backup/file', `clinic-backup-${new Date().toISOString().slice(0, 10)}.json`).catch((e) => toast(e.message, 'bad'))}><Icon.db /> تنزيل ملف النسخة</button>
+              <button className="btn-ghost" onClick={() => run(() => api.post('/maintenance/vacuum'), { ok: 'تم فحص سلامة البيانات وتحديث فهارس القاعدة' }).catch(() => {})}><Icon.refresh /> فحص السلامة</button>
               <button className="btn-danger" onClick={() => fileRef.current?.click()}><Icon.upload /> استعادة من ملف</button>
             </div>
             <input ref={fileRef} type="file" accept=".json,application/json" className="hidden"
@@ -113,7 +116,10 @@ export default function Settings() {
               }} />
             <div className="mt-4 rounded-xl border border-line bg-sand/60 p-3 text-[12.5px] leading-6">
               <p className="font-extrabold">حالة قاعدة البيانات</p>
-              <p className="muted mt-1">الملف: <span dir="ltr" className="tnum">{data.health?.db_path || '—'}</span></p>
+              <p className="muted mt-1">
+                المحرك: <Badge tone={data.health?.mode === 'demo-ephemeral' ? 'warn' : 'good'}>{data.health?.engine === 'postgres' ? 'PostgreSQL (Neon) — دائم' : data.health?.mode === 'demo-ephemeral' ? 'تجريبي — يُمسح' : 'PostgreSQL مدمج (محلي)'}</Badge>
+              </p>
+              <p className="muted mt-1">المكان: <span dir="ltr" className="tnum">{data.health?.db || '—'}</span></p>
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {Object.entries(data.health?.counts || {}).map(([k, v]) => <Badge key={k} tone="info">{k}: {v}</Badge>)}
               </div>
@@ -270,6 +276,7 @@ function UserModal({ state, onClose, reload, isAdmin, me }) {
       setBusy(true);
       try {
         await run(() => api.post('/auth/change-password', { current_password: form.current_password, new_password: form.password }), { ok: 'تم تغيير كلمة المرور' });
+        window.dispatchEvent(new Event('clinic:password-changed'));
         onClose();
       } catch { /* تنبيه ظاهر */ } finally { setBusy(false); }
       return;

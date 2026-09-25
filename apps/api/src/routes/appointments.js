@@ -9,7 +9,7 @@ export const router = Router();
 const TYPES = ['initial', 'followup', 'consult', 'plan_update', 'lab_review'];
 const STATUSES = ['scheduled', 'confirmed', 'done', 'cancelled', 'no_show'];
 
-function normalize(body, existing = {}) {
+async function normalize(body, existing = {}) {
   const out = {
     patient_id: Number(body.patient_id ?? existing.patient_id),
     date: body.date !== undefined ? String(body.date) : existing.date,
@@ -25,7 +25,7 @@ function normalize(body, existing = {}) {
   if (!isTime(out.time)) throw badRequest('الساعة مطلوبة بصيغة HH:MM');
   if (!Number.isFinite(out.duration_min) || out.duration_min < 5 || out.duration_min > 240)
     throw badRequest('مدة الموعد يجب أن تكون بين 5 و 240 دقيقة');
-  if (!db.prepare(`SELECT id FROM patients WHERE id=?`).get(out.patient_id))
+  if (!(await db.get(`SELECT id FROM patients WHERE id=?`, out.patient_id)))
     throw badRequest('رقم المريض غير موجود');
   return out;
 }
@@ -37,9 +37,9 @@ const SELECT = `
   FROM appointments a JOIN patients p ON p.id = a.patient_id
   LEFT JOIN users u ON u.id = a.created_by`;
 
-router.get('/today', wrap((req, res) => {
+router.get('/today', wrap(async (req, res) => {
   const date = isDate(String(req.query.date || '')) ? req.query.date : todayISO();
-  const items = db.prepare(`${SELECT} WHERE a.date = ? ORDER BY a.time`).all(date);
+  const items = await db.all(`${SELECT} WHERE a.date = ? ORDER BY a.time`, date);
   const summary = {
     date,
     total: items.length,
@@ -52,80 +52,82 @@ router.get('/today', wrap((req, res) => {
   res.json({ ...summary, items });
 }));
 
-router.get('/', wrap((req, res) => {
+router.get('/', wrap(async (req, res) => {
   const where = [];
   const params = {};
   if (req.query.patient_id) { where.push(`a.patient_id = @patient_id`); params.patient_id = Number(req.query.patient_id); }
   if (isDate(String(req.query.from || ''))) { where.push(`a.date >= @from`); params.from = req.query.from; }
   if (isDate(String(req.query.to || ''))) { where.push(`a.date <= @to`); params.to = req.query.to; }
   if (STATUSES.includes(String(req.query.status || ''))) { where.push(`a.status = @status`); params.status = req.query.status; }
-  if (req.query.q) { where.push(`(p.first_name LIKE @q OR p.last_name LIKE @q OR p.file_no LIKE @q OR IFNULL(p.phone,'') LIKE @q)`); params.q = `%${req.query.q}%`; }
+  if (req.query.q) { where.push(`(p.first_name ILIKE @q OR p.last_name ILIKE @q OR p.file_no ILIKE @q OR COALESCE(p.phone,'') ILIKE @q)`); params.q = `%${req.query.q}%`; }
   const limit = Math.min(Number(req.query.limit) || 200, 500);
   const dir = String(req.query.dir || 'asc').toLowerCase() === 'desc' ? 'DESC' : 'ASC';
-  const items = db.prepare(`
+  const items = await db.all(`
     ${SELECT} ${where.length ? 'WHERE ' + where.join(' AND ') : ''}
     ORDER BY a.date ${dir}, a.time ${dir} LIMIT @limit
-  `).all({ ...params, limit });
+  `, { ...params, limit });
   res.json({ items, count: items.length });
 }));
 
-router.get('/upcoming', wrap((req, res) => {
-  const items = db.prepare(`
+router.get('/upcoming', wrap(async (req, res) => {
+  const items = await db.all(`
     ${SELECT} WHERE a.date >= @today AND a.status IN ('scheduled','confirmed')
     ORDER BY a.date, a.time LIMIT 30
-  `).all({ today: todayISO() });
+  `, { today: todayISO() });
   res.json({ items });
 }));
 
-router.post('/', canWrite(), wrap((req, res) => {
-  const data = normalize(req.body);
-  const clash = db.prepare(`
+router.post('/', canWrite(), wrap(async (req, res) => {
+  const data = await normalize(req.body);
+  const clash = await db.get(`
     SELECT id FROM appointments WHERE date=? AND time=? AND status IN ('scheduled','confirmed') LIMIT 1
-  `).get(data.date, data.time);
+  `, data.date, data.time);
   if (clash) throw conflict(`يوجد موعد مسجل بالفعل في ${data.date} ${data.time} — اختر وقتاً آخر`);
-  const info = db.prepare(`
+  const newId = await db.insert(`
     INSERT INTO appointments (patient_id, date, time, duration_min, visit_type, status, room, notes, created_by)
     VALUES (@patient_id, @date, @time, @duration_min, @visit_type, @status, @room, @notes, @created_by)
-  `).run({ ...data, created_by: req.user.id });
-  audit({ userId: req.user.id, action: 'appointment.create', entity: 'appointments', entityId: info.lastInsertRowid });
-  res.status(201).json(db.prepare(`${SELECT} WHERE a.id = ?`).get(info.lastInsertRowid));
+  `, { ...data, created_by: req.user.id });
+  await audit({ userId: req.user.id, action: 'appointment.create', entity: 'appointments', entityId: newId });
+  res.status(201).json(await db.get(`${SELECT} WHERE a.id = ?`, newId));
 }));
 
-router.put('/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare(`SELECT * FROM appointments WHERE id=?`).get(id);
+  const existing = await db.get(`SELECT * FROM appointments WHERE id=?`, id);
   if (!existing) throw notFound('الموعد غير موجود');
-  const data = normalize(req.body, existing);
-  db.prepare(`
+  const data = await normalize(req.body, existing);
+  await db.run(`
     UPDATE appointments SET patient_id=@patient_id, date=@date, time=@time, duration_min=@duration_min,
       visit_type=@visit_type, status=@status, room=@room, notes=@notes WHERE id=@id
-  `).run({ ...data, id });
-  audit({ userId: req.user.id, action: 'appointment.update', entity: 'appointments', entityId: id });
-  res.json(db.prepare(`${SELECT} WHERE a.id = ?`).get(id));
+  `, { ...data, id });
+  await audit({ userId: req.user.id, action: 'appointment.update', entity: 'appointments', entityId: id });
+  res.json(await db.get(`${SELECT} WHERE a.id = ?`, id));
 }));
 
 /** تغيير الحالة فقط (زر سريع في جدول اليوم) */
-router.post('/:id(\\d+)/status', canWrite(), wrap((req, res) => {
+router.post('/:id(\\d+)/status', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
   const status = String(req.body.status || '');
   if (!STATUSES.includes(status)) throw badRequest('حالة غير معروفة');
-  const existing = db.prepare(`SELECT * FROM appointments WHERE id=?`).get(id);
+  const existing = await db.get(`SELECT * FROM appointments WHERE id=?`, id);
   if (!existing) throw notFound('الموعد غير موجود');
-  db.prepare(`UPDATE appointments SET status=? WHERE id=?`).run(status, id);
-  // إذا الزيارة تمت، ننشئ زيارة تلقائياً إن لم تكن موجودة في نفس اليوم
-  if (status === 'done' && !db.prepare(`SELECT id FROM visits WHERE patient_id=? AND visit_date=?`).get(existing.patient_id, existing.date)) {
-    const v = db.prepare(`INSERT INTO visits (patient_id, visit_date, visit_type, reason, created_by) VALUES (?,?,?,?,?)`)
-      .run(existing.patient_id, existing.date, existing.visit_type, `مُسجلة تلقائياً من الموعد رقم ${id}`, req.user.id);
-    audit({ userId: req.user.id, action: 'visit.auto_create', entity: 'visits', entityId: v.lastInsertRowid });
-  }
-  audit({ userId: req.user.id, action: 'appointment.status', entity: 'appointments', entityId: id, detail: { status } });
-  res.json(db.prepare(`${SELECT} WHERE a.id = ?`).get(id));
+  await db.tx(async () => {
+    await db.run(`UPDATE appointments SET status=? WHERE id=?`, status, id);
+    // إذا الزيارة تمت، ننشئ زيارة تلقائياً إن لم تكن موجودة في نفس اليوم
+    if (status === 'done' && !(await db.get(`SELECT id FROM visits WHERE patient_id=? AND visit_date=?`, existing.patient_id, existing.date))) {
+      const visitId = await db.insert(`INSERT INTO visits (patient_id, visit_date, visit_type, reason, created_by) VALUES (?,?,?,?,?)`,
+        existing.patient_id, existing.date, existing.visit_type, `مُسجلة تلقائياً من الموعد رقم ${id}`, req.user.id);
+      await audit({ userId: req.user.id, action: 'visit.auto_create', entity: 'visits', entityId: visitId });
+    }
+    await audit({ userId: req.user.id, action: 'appointment.status', entity: 'appointments', entityId: id, detail: { status } });
+  });
+  res.json(await db.get(`${SELECT} WHERE a.id = ?`, id));
 }));
 
-router.delete('/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.delete('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!db.prepare(`SELECT id FROM appointments WHERE id=?`).get(id)) throw notFound();
-  db.prepare(`DELETE FROM appointments WHERE id=?`).run(id);
-  audit({ userId: req.user.id, action: 'appointment.delete', entity: 'appointments', entityId: id });
+  if (!(await db.get(`SELECT id FROM appointments WHERE id=?`, id))) throw notFound();
+  await db.run(`DELETE FROM appointments WHERE id=?`, id);
+  await audit({ userId: req.user.id, action: 'appointment.delete', entity: 'appointments', entityId: id });
   res.json({ deleted: true, id });
 }));

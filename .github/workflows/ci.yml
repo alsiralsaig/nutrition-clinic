@@ -8,6 +8,24 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+
+    # PostgreSQL حقيقي بنفس محرك Neon — كل دفع يُختبر على القاعدة التي ستعمل في الإنتاج
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: clinic_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      PG_ADMIN: postgres://postgres:postgres@localhost:5432
+
     steps:
       - uses: actions/checkout@v4
 
@@ -21,16 +39,34 @@ jobs:
 
       - name: Build web
         run: npm run build
-      - name: فحص إعداد Vercel (تغطية جسور /api)
+
+      - name: فحص إعداد Vercel (جسور /api + لا بقايا SQLite)
         run: npm run deploy:check
 
-      - name: API smoke tests (85 checks)
+      - name: API smoke tests — Postgres مدمج (PGlite)
         run: npm run test:api
 
-      - name: API serves the built UI on one port
+      - name: API smoke tests — PostgreSQL 17 حقيقي (مسار Neon)
         run: |
-          node apps/api/src/server.js &
-          sleep 3
-          curl -fsS localhost:4000/api/health | grep -q '"ok":true'
+          psql "$PG_ADMIN/clinic_ci" -c "CREATE DATABASE clinic_smoke"
+          DATABASE_URL="$PG_ADMIN/clinic_smoke" SEED_DEMO=1 npm run test:api
+
+      - name: محاكاة Vercel — الوضع التجريبي + وضع Neon (البيانات تنجو من حاوية جديدة)
+        run: |
+          psql "$PG_ADMIN/clinic_ci" -c "CREATE DATABASE clinic_sim"
+          SIM_DATABASE_URL="$PG_ADMIN/clinic_sim" npm run deploy:sim
+
+      - name: API serves the built UI on one port (+ login عبر مسار متعدد المقاطع) + UI tests
+        run: |
+          psql "$PG_ADMIN/clinic_ci" -c "CREATE DATABASE clinic_serve"
+          DATABASE_URL="$PG_ADMIN/clinic_serve" SEED_DEMO=1 node apps/api/src/server.js &
+          for i in $(seq 1 40); do curl -fsS localhost:4000/api/health >/dev/null 2>&1 && break; sleep 0.5; done
+          curl -fsS localhost:4000/api/health | grep -q '"engine":"postgres"'
           curl -fsS localhost:4000/ | grep -q 'dir="rtl"'
           curl -fsS localhost:4000/openapi.json | grep -q '"openapi"'
+          curl -fsS localhost:4000/api/openapi.json | grep -q '"openapi"'
+          TOKEN=$(curl -fsS -X POST localhost:4000/api/auth/login -H 'content-type: application/json' \
+            -d '{"username":"admin","password":"admin123"}' | node -pe 'JSON.parse(require("fs").readFileSync(0)).token')
+          test ${#TOKEN} -gt 100
+          curl -fsS localhost:4000/api/dashboard/summary -H "authorization: Bearer $TOKEN" | grep -q '"patients"'
+          npm run test:ui

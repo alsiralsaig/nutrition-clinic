@@ -42,8 +42,17 @@ else ok.push(`${list.length} بادئة API (${list.length * 2 + SINGLE_FILES.le
 const srv = fs.readFileSync('apps/api/src/server.js', 'utf8');
 if (!/export default app/.test(srv)) fail.push('server.js لا يصدّر app كـ default');
 if (!/!process\.env\.VERCEL/.test(srv)) fail.push('server.js سيستدعي listen على Vercel (يجب منعه)');
-if (!/EPHEMERAL/.test(fs.readFileSync('apps/api/src/db.js', 'utf8'))) fail.push('db.js لا يعرف وضع /tmp المؤقت');
-if (!/EPHEMERAL/.test(fs.readFileSync('apps/api/src/auth.js', 'utf8'))) fail.push('auth.js سيكتب مفتاح JWT على قرص للقراءة فقط');
+const dbSrc = fs.readFileSync('apps/api/src/db.js', 'utf8');
+if (!/EPHEMERAL/.test(dbSrc)) fail.push('db.js لا يعرف الوضع التجريبي (Vercel بلا قاعدة)');
+if (!/EPHEMERAL/.test(fs.readFileSync('apps/api/src/auth.js', 'utf8'))) fail.push('auth.js لا يعرف الوضع التجريبي (سر JWT يجب أن يتفق بين الحاويات)');
+// قاعدة البيانات: Postgres (Neon) عبر DATABASE_URL — لا SQLite على Vercel إطلاقاً
+if (!/process\.env\.DATABASE_URL/.test(dbSrc)) fail.push('db.js لا يقرأ DATABASE_URL (رابط Neon)');
+const apiPkg = JSON.parse(fs.readFileSync('apps/api/package.json', 'utf8'));
+if (!apiPkg.dependencies?.pg) fail.push('apps/api ينقصه الاعتماد pg (مشغّل Postgres/Neon)');
+if (apiPkg.dependencies?.['better-sqlite3']) fail.push('better-sqlite3 ما زال معتمداً — SQLite لا يحفظ شيئاً على Vercel');
+const srcFiles = fs.readdirSync('apps/api/src', { recursive: true }).map(String).filter((f) => f.endsWith('.js'));
+const sqliteLeft = srcFiles.filter((f) => /better-sqlite3|\.prepare\(|datetime\('now'\)|lastInsertRowid/.test(fs.readFileSync('apps/api/src/' + f, 'utf8')));
+if (sqliteLeft.length) fail.push('بقايا لهجة SQLite في: ' + sqliteLeft.join(', '));
 
 console.log(ok.map((x) => '  ✓ ' + x).join('\n'));
 if (fail.length) { console.error('\n' + fail.map((x) => '  ✗ ' + x).join('\n')); process.exit(1); }

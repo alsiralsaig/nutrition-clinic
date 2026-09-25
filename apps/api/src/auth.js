@@ -1,35 +1,33 @@
 // المصادقية والصلاحيات: JWT + bcrypt + أدوار (admin / staff / viewer)
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db, audit, EPHEMERAL } from './db.js';
+import { db, audit, EPHEMERAL, NOW } from './db.js';
 import { forbidden, HttpError } from './lib.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const SECRET_FILE = path.join(__dirname, '..', '.jwt-secret');
-
-function loadSecret() {
-  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
-  // على منصة serverless: القرص للقراءة فقط، ولا بد أن تتفق كل الحاويات على نفس المفتاح
-  // وإلا رفضت كل الطلبات بعد أول تسجيل دخول. لذلك مفتاح ثابت معلن للوضع التجريبي.
+/**
+ * مفتاح توقيع الجلسات (JWT) — بالأولوية:
+ *  1) متغير البيئة JWT_SECRET (الأفضل على Vercel)
+ *  2) الوضع التجريبي بلا قاعدة: مفتاح ثابت معلن (كل حاويات Vercel يجب أن تتفق عليه)
+ *  3) مفتاح عشوائي يُولَّد مرة واحدة ويُحفظ داخل القاعدة (settings._jwt_secret)
+ *     → يبقى ثابتاً عبر إعادة التشغيل وعبر كل الحاويات التي تشارك نفس القاعدة
+ */
+let SECRET = process.env.JWT_SECRET || null;
+export async function initSecret() {
+  if (process.env.JWT_SECRET) { SECRET = process.env.JWT_SECRET; return; }
   if (EPHEMERAL) {
     console.warn('[auth] وضع تجريبي: استعمل JWT_SECRET ثابتاً في متغيرات البيئة على Vercel');
-    return 'vercel-demo-secret-not-for-production';
+    SECRET = 'vercel-demo-secret-not-for-production';
+    return;
   }
-  try {
-    const saved = fs.readFileSync(SECRET_FILE, 'utf8').trim();
-    if (saved) return saved;
-  } catch { /* لا يوجد ملف بعد */ }
-  const generated = randomBytes(48).toString('hex');
-  try { fs.writeFileSync(SECRET_FILE, generated, { mode: 0o600 }); }
-  catch { console.warn('[auth] تعذّر حفظ مفتاح الجلسة على القرص — سيُستخدم مؤقتاً فقط لهذه الحاوية'); }
-  return generated;
+  await db.run(`INSERT INTO settings (key, value) VALUES ('_jwt_secret', ?) ON CONFLICT (key) DO NOTHING`,
+    randomBytes(48).toString('hex'));
+  SECRET = (await db.get(`SELECT value FROM settings WHERE key = '_jwt_secret'`)).value;
 }
-
-const SECRET = loadSecret();
+const secret = () => {
+  if (!SECRET) throw new HttpError(503, 'الخادم ما زال يُهيّئ الجلسات — أعد المحاولة بعد ثوانٍ');
+  return SECRET;
+};
 const TTL = process.env.JWT_TTL || '12h';
 
 export const ROLES = {
@@ -47,13 +45,13 @@ export const checkPassword = (plain, hash) => {
 export function signToken(user) {
   return jwt.sign(
     { sub: user.id, username: user.username, role: user.role, name: user.full_name },
-    SECRET,
+    secret(),
     { expiresIn: TTL },
   );
 }
 
 export function verifyToken(token) {
-  return jwt.verify(token, SECRET);
+  return jwt.verify(token, secret());
 }
 
 /** يبني خطأ مصادقة موحد */
@@ -67,20 +65,21 @@ function readToken(req) {
   return null;
 }
 
-export function authRequired(req, res, next) {
+export async function authRequired(req, res, next) {
   const token = readToken(req);
   if (!token) return next(authError());
+  let payload;
+  try { payload = verifyToken(token); }
+  catch (e) {
+    if (e instanceof HttpError) return next(e);
+    return next(e.name === 'TokenExpiredError' ? authError('انتهت الجلسة، سجّل الدخول من جديد') : authError());
+  }
   try {
-    const payload = verifyToken(token);
-    const user = db
-      .prepare(`SELECT id, username, full_name, role, active FROM users WHERE id = ?`)
-      .get(payload.sub);
+    const user = await db.get(`SELECT id, username, full_name, role, active FROM users WHERE id = ?`, payload.sub);
     if (!user || !user.active) return next(authError('الحساب موقوف — راجع الإدارة'));
     req.user = user;
     next();
-  } catch (e) {
-    next(e.name === 'TokenExpiredError' ? authError('انتهت الجلسة، سجّل الدخول من جديد') : authError());
-  }
+  } catch (e) { next(e); }
 }
 
 export function requireRole(...roles) {
@@ -94,9 +93,12 @@ export function requireRole(...roles) {
 export const canWrite = () => requireRole('admin', 'staff');
 export const adminOnly = () => requireRole('admin');
 
-export function touchLogin(userId) {
-  db.prepare(`UPDATE users SET last_login_at = datetime('now') WHERE id = ?`).run(userId);
-  audit({ userId, action: 'auth.login', entity: 'users', entityId: userId });
+export async function touchLogin(userId) {
+  await db.run(`UPDATE users SET last_login_at = ${NOW} WHERE id = ?`, userId);
+  await audit({ userId, action: 'auth.login', entity: 'users', entityId: userId });
 }
 
-export { SECRET_FILE, TTL };
+/** كلمة مرور المدير الافتراضية ما زالت مستعملة؟ (تُعرض كتنبيه في الواجهة) */
+export const DEFAULT_ADMIN_PASSWORD = 'admin123';
+
+export { TTL };

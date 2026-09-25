@@ -1,33 +1,37 @@
 // التقارير: جاهزة للطباعة وPDF (الطباعة تُنسّق في الواجهة) + تصدير CSV
 import { Router } from 'express';
-import { db, getSettings } from '../db.js';
+import { db, getSettings, getSetting } from '../db.js';
 import { badRequest, notFound, wrap, isDate, todayISO } from '../lib.js';
 
 export const router = Router();
 
 /** تقرير كامل للمريض: بيانات + زيارات + قياسات + خطة + مواعيد + مدفوعات */
-router.get('/patient/:id(\\d+)', wrap((req, res) => {
+router.get('/patient/:id(\\d+)', wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const patient = db.prepare(`
+  const patient = await db.get(`
     SELECT p.*, (p.first_name || ' ' || p.last_name) AS full_name FROM patients p WHERE p.id = ?
-  `).get(id);
+  `, id);
   if (!patient) throw notFound('المريض غير موجود');
-  const measurements = db.prepare(`
+  const measurements = await db.all(`
     SELECT * FROM measurements WHERE patient_id=? ORDER BY measured_on, id
-  `).all(id);
+  `, id);
+  const planRows = await db.all(`SELECT * FROM diet_plans WHERE patient_id=? ORDER BY id DESC`, id);
+  const meals = planRows.length
+    ? await db.all(`SELECT * FROM diet_meals WHERE plan_id = ANY(?::int[]) ORDER BY position, id`, planRows.map((p) => p.id))
+    : [];
+  const visits = await db.all(`SELECT * FROM visits WHERE patient_id=? ORDER BY visit_date, id`, id);
   const report = {
     generated_at: new Date().toISOString(),
-    clinic: getSettings(),
+    clinic: await getSettings(),
     patient,
     measurements,
-    visits: db.prepare(`SELECT * FROM visits WHERE patient_id=? ORDER BY visit_date, id`).all(id),
-    plans: db.prepare(`SELECT * FROM diet_plans WHERE patient_id=? ORDER BY id DESC`).all(id)
-      .map((p) => ({ ...p, meals: db.prepare(`SELECT * FROM diet_meals WHERE plan_id=? ORDER BY position,id`).all(p.id) })),
-    appointments: db.prepare(`SELECT * FROM appointments WHERE patient_id=? ORDER BY date DESC, time DESC`).all(id),
-    payments: db.prepare(`SELECT * FROM payments WHERE patient_id=? ORDER BY paid_on DESC, id DESC`).all(id),
+    visits,
+    plans: planRows.map((p) => ({ ...p, meals: meals.filter((m) => m.plan_id === p.id) })),
+    appointments: await db.all(`SELECT * FROM appointments WHERE patient_id=? ORDER BY date DESC, time DESC`, id),
+    payments: await db.all(`SELECT * FROM payments WHERE patient_id=? ORDER BY paid_on DESC, id DESC`, id),
     totals: {
-      paid: db.prepare(`SELECT COALESCE(ROUND(SUM(amount),2),0) t FROM payments WHERE patient_id=? AND voided=0`).get(id).t,
-      visits: db.prepare(`SELECT COUNT(*) n FROM visits WHERE patient_id=?`).get(id).n,
+      paid: (await db.get(`SELECT COALESCE(ROUND(SUM(amount)::numeric,2),0) t FROM payments WHERE patient_id=? AND voided=0`, id)).t,
+      visits: visits.length,
       weight_change: measurements.length >= 2
         ? Math.round((measurements.at(-1).weight_kg - measurements[0].weight_kg) * 10) / 10 : null,
     },
@@ -36,16 +40,16 @@ router.get('/patient/:id(\\d+)', wrap((req, res) => {
 }));
 
 /** تقرير تطور الوزن لمريض أو لكل المرضى في فترة */
-router.get('/weight-progress/:id(\\d+)', wrap((req, res) => {
+router.get('/weight-progress/:id(\\d+)', wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT measured_on, weight_kg, bmi, waist_cm, hip_cm, chest_cm, body_fat_pct
     FROM measurements WHERE patient_id=? AND weight_kg IS NOT NULL ORDER BY measured_on, id
-  `).all(id);
+  `, id);
   if (!rows.length) throw notFound('لا توجد قياسات لهذا المريض');
   const start = rows[0], last = rows.at(-1);
   res.json({
-    patient: db.prepare(`SELECT id, file_no, (first_name||' '||last_name) AS full_name, height_cm, start_weight, goal_weight, gender, birth_date FROM patients WHERE id=?`).get(id),
+    patient: await db.get(`SELECT id, file_no, (first_name||' '||last_name) AS full_name, height_cm, start_weight, goal_weight, gender, birth_date FROM patients WHERE id=?`, id),
     rows: rows.map((r, i) => ({
       ...r,
       seq: i + 1,
@@ -67,16 +71,16 @@ router.get('/weight-progress/:id(\\d+)', wrap((req, res) => {
 }));
 
 /** تقرير الزيارات */
-router.get('/visits', wrap((req, res) => {
+router.get('/visits', wrap(async (req, res) => {
   const from = isDate(String(req.query.from || '')) ? req.query.from : '0000-01-01';
   const to = isDate(String(req.query.to || '')) ? req.query.to : todayISO();
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT v.visit_date AS date, v.visit_type, p.id AS patient_id, p.file_no,
            (p.first_name||' '||p.last_name) AS patient_name, u.full_name AS staff_name,
            (SELECT COUNT(*) FROM measurements m WHERE m.visit_id=v.id) AS has_meas
     FROM visits v JOIN patients p ON p.id=v.patient_id LEFT JOIN users u ON u.id=v.created_by
     WHERE v.visit_date BETWEEN ? AND ? ORDER BY v.visit_date DESC, v.id DESC LIMIT 2000
-  `).all(from, to);
+  `, from, to);
   const byType = {};
   for (const r of rows) byType[r.visit_type] = (byType[r.visit_type] || 0) + 1;
   const byMonth = {};
@@ -90,16 +94,16 @@ router.get('/visits', wrap((req, res) => {
 }));
 
 /** تقرير الإيرادات */
-router.get('/revenue', wrap((req, res) => {
+router.get('/revenue', wrap(async (req, res) => {
   const from = isDate(String(req.query.from || '')) ? req.query.from : '0000-01-01';
   const to = isDate(String(req.query.to || '')) ? req.query.to : todayISO();
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT pa.paid_on AS date, pa.service, pa.method, pa.amount, pa.voided, pa.invoice_no,
            p.id AS patient_id, p.file_no, (p.first_name||' '||p.last_name) AS patient_name,
            u.full_name AS staff_name
     FROM payments pa JOIN patients p ON p.id=pa.patient_id LEFT JOIN users u ON u.id=pa.recorded_by
     WHERE pa.paid_on BETWEEN ? AND ? ORDER BY pa.paid_on DESC, pa.id DESC LIMIT 5000
-  `).all(from, to);
+  `, from, to);
   const valid = rows.filter((r) => !r.voided);
   const group = (key) => Object.entries(valid.reduce((acc, r) => {
     const k = r[key] || 'غير محدد';
@@ -114,7 +118,7 @@ router.get('/revenue', wrap((req, res) => {
     return acc;
   }, {})).map(([month, total]) => ({ month, total: Math.round(total * 100) / 100 })).sort((a, b) => a.month.localeCompare(b.month));
   res.json({
-    from, to, currency: getSettings()['clinic.currency'] || 'SDG',
+    from, to, currency: await getSetting('clinic.currency', 'SDG'),
     gross: Math.round(valid.reduce((s, r) => s + r.amount, 0) * 100) / 100,
     voided_count: rows.length - valid.length,
     count: valid.length,
@@ -128,30 +132,30 @@ router.get('/revenue', wrap((req, res) => {
 }));
 
 /** سجل التدقيق — من عدّل ماذا */
-router.get('/audit', wrap((req, res) => {
+router.get('/audit', wrap(async (req, res) => {
   const limit = Math.min(Number(req.query.limit) || 200, 1000);
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT al.*, u.username, u.full_name FROM audit_log al LEFT JOIN users u ON u.id = al.user_id
     ORDER BY al.id DESC LIMIT ?
-  `).all(limit);
+  `, limit);
   res.json({ items: rows });
 }));
 
 /** تصدير CSV (يتوافق مع Excel، بترميز UTF-8 BOM للعربية) */
 const EXPORTS = {
-  patients: `SELECT file_no AS 'رقم الملف', first_name AS 'الاسم', last_name AS 'اللقب', phone AS 'الهاتف',
-      birth_date AS 'تاريخ الميلاد', gender AS 'الجنس', height_cm AS 'الطول', start_weight AS 'وزن البداية',
-      goal_weight AS 'الهدف', status AS 'الحالة', created_at AS 'تاريخ التسجيل' FROM patients ORDER BY id`,
-  measurements: `SELECT p.file_no AS 'رقم الملف', (p.first_name||' '||p.last_name) AS 'المريض',
-      m.measured_on AS 'التاريخ', m.weight_kg AS 'الوزن', m.bmi AS 'BMI', m.waist_cm AS 'الخصر',
-      m.hip_cm AS 'الورك', m.chest_cm AS 'الصدر', m.body_fat_pct AS 'نسبة الدهون'
+  patients: `SELECT file_no AS "رقم الملف", first_name AS "الاسم", last_name AS "اللقب", phone AS "الهاتف",
+      birth_date AS "تاريخ الميلاد", gender AS "الجنس", height_cm AS "الطول", start_weight AS "وزن البداية",
+      goal_weight AS "الهدف", status AS "الحالة", created_at AS "تاريخ التسجيل" FROM patients ORDER BY id`,
+  measurements: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض",
+      m.measured_on AS "التاريخ", m.weight_kg AS "الوزن", m.bmi AS "BMI", m.waist_cm AS "الخصر",
+      m.hip_cm AS "الورك", m.chest_cm AS "الصدر", m.body_fat_pct AS "نسبة الدهون"
       FROM measurements m JOIN patients p ON p.id=m.patient_id ORDER BY m.measured_on DESC`,
-  payments: `SELECT p.file_no AS 'رقم الملف', (p.first_name||' '||p.last_name) AS 'المريض', pa.paid_on AS 'التاريخ',
-      pa.service AS 'الخدمة', pa.amount AS 'المبلغ', pa.method AS 'الطريقة', pa.invoice_no AS 'الفاتورة',
-      pa.voided AS 'ملغي'
+  payments: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض", pa.paid_on AS "التاريخ",
+      pa.service AS "الخدمة", pa.amount AS "المبلغ", pa.method AS "الطريقة", pa.invoice_no AS "الفاتورة",
+      pa.voided AS "ملغي"
       FROM payments pa JOIN patients p ON p.id=pa.patient_id ORDER BY pa.paid_on DESC`,
-  appointments: `SELECT a.date AS 'التاريخ', a.time AS 'الوقت', p.file_no AS 'رقم الملف',
-      (p.first_name||' '||p.last_name) AS 'المريض', a.visit_type AS 'النوع', a.status AS 'الحالة', a.duration_min AS 'المدة'
+  appointments: `SELECT a.date AS "التاريخ", a.time AS "الوقت", p.file_no AS "رقم الملف",
+      (p.first_name||' '||p.last_name) AS "المريض", a.visit_type AS "النوع", a.status AS "الحالة", a.duration_min AS "المدة"
       FROM appointments a JOIN patients p ON p.id=a.patient_id ORDER BY a.date DESC, a.time DESC`,
 };
 
@@ -166,10 +170,10 @@ export function toCsv(rows) {
   return '\uFEFF' + [head.join(','), ...rows.map((r) => head.map((h) => esc(r[h])).join(','))].join('\r\n');
 }
 
-router.get('/export/:kind', wrap((req, res) => {
-  const sql = EXPORTS[String(req.params.kind)];
+router.get('/export/:kind', wrap(async (req, res) => {
+  const sql = Object.prototype.hasOwnProperty.call(EXPORTS, String(req.params.kind)) ? EXPORTS[String(req.params.kind)] : null;
   if (!sql) throw badRequest('نوع تصدير غير معروف. المتاح: ' + Object.keys(EXPORTS).join(', '));
-  const rows = db.prepare(sql).all();
+  const rows = await db.all(sql);
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
   res.setHeader('Content-Disposition', `attachment; filename="${req.params.kind}-${todayISO()}.csv"`);
   res.send(toCsv(rows));

@@ -4,8 +4,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
-import { migrate, db, DB_PATH, EPHEMERAL } from './db.js';
-import { authRequired } from './auth.js';
+import { connect, db, DB_LABEL, DRIVER, EPHEMERAL, PRODUCTION_DB } from './db.js';
+import { authRequired, initSecret } from './auth.js';
 import { HttpError } from './lib.js';
 
 import { router as authRoutes } from './routes/auth.js';
@@ -17,15 +17,30 @@ import { router as paymentRoutes } from './routes/payments.js';
 import { router as dashboardRoutes } from './routes/dashboard.js';
 import { router as reportRoutes } from './routes/reports.js';
 import { router as systemRoutes } from './routes/system.js';
-import { ensureSeed } from './seed.js';
+import { ensureSeed, SEED_DEMO } from './seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 4000);
 const HOST = process.env.HOST || '0.0.0.0';
 const WEB_DIST = process.env.WEB_DIST || path.join(__dirname, '..', '..', 'web', 'dist');
 
-migrate();
-ensureSeed({ quiet: true });
+/**
+ * تهيئة لمرة واحدة لكل عملية/حاوية: اتصال → مخطط → مفتاح الجلسات → بذرة.
+ * لو فشلت (مثلاً DATABASE_URL خاطئ) تُعاد المحاولة مع الطلب التالي بدل تعطيل الحاوية للأبد.
+ */
+let booting = null;
+export function bootstrap() {
+  if (!booting) {
+    booting = (async () => {
+      await connect();
+      await initSecret();
+      await ensureSeed({ quiet: !!process.env.VERCEL || process.env.NODE_ENV === 'test' });
+    })().catch((e) => { booting = null; throw e; });
+  }
+  return booting;
+}
+// تسخين مبكر (على Vercel يوفّر زمن أول طلب). CLINIC_LAZY_BOOT=1 يؤجلها لأول طلب (أدوات الفحص)
+if (!process.env.CLINIC_LAZY_BOOT) bootstrap().catch((e) => console.error('[db] تعذّرت التهيئة:', e.message));
 
 const app = express();
 app.disable('x-powered-by');
@@ -45,19 +60,28 @@ app.use('/api/auth/login', (req, res, next) => {
   next();
 });
 
+// كل مسارات الـ API تنتظر جاهزية القاعدة (الملفات الثابتة لا تنتظر)
+app.use('/api', (req, res, next) => { bootstrap().then(() => next(), next); });
+
 // ---------- مسارات عامة ----------
-app.get('/api/health', (req, res) => {
-  res.json({
-    ok: true,
-    time: new Date().toISOString(),
-    mode: EPHEMERAL ? 'demo-ephemeral' : 'persistent',
-    db_path: DB_PATH,
-    counts: {
-      patients: db.prepare(`SELECT COUNT(*) n FROM patients`).get().n,
-      appointments: db.prepare(`SELECT COUNT(*) n FROM appointments`).get().n,
-      payments: db.prepare(`SELECT COUNT(*) n FROM payments`).get().n,
-    },
-  });
+app.get('/api/health', async (req, res, next) => {
+  try {
+    const t0 = Date.now();
+    const counts = await db.get(`
+      SELECT (SELECT COUNT(*) FROM patients) AS patients, (SELECT COUNT(*) FROM appointments) AS appointments,
+             (SELECT COUNT(*) FROM payments) AS payments`);
+    res.json({
+      ok: true,
+      time: new Date().toISOString(),
+      mode: EPHEMERAL ? 'demo-ephemeral' : 'persistent',
+      engine: DRIVER,                 // postgres (Neon/حقيقي) أو pglite (مدمج)
+      production_db: PRODUCTION_DB,
+      demo_data: SEED_DEMO,
+      db: DB_LABEL,
+      db_latency_ms: Date.now() - t0,
+      counts,
+    });
+  } catch (e) { next(e); }
 });
 app.use('/api/auth', authRoutes);
 
@@ -102,20 +126,31 @@ app.use((req, res) => res.status(404).json({ error: 'المسار غير موج�
 app.use((err, req, res, next) => {
   if (err instanceof HttpError) return res.status(err.status).json({ error: err.message, details: err.details ?? null });
   if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'حجم البيانات أكبر من المسموح' });
-  if (String(err?.message || '').includes('UNIQUE constraint failed')) {
+  // أكواد أخطاء Postgres المعروفة → رسائل مفهومة بدل 500
+  if (err?.code === '23505') {
     return res.status(409).json({ error: 'بيانات مكرّرة: قيمة يجب أن تكون فريدة (موعد أو اسم مستخدم مستخدم بالفعل)' });
+  }
+  if (err?.code === '23503') return res.status(400).json({ error: 'السجل المرتبط غير موجود (مريض أو موعد أو مستخدم)' });
+  if (err?.code === '23514' || err?.code === '22P02' || err?.code === '22003') {
+    return res.status(400).json({ error: 'قيمة غير صالحة لأحد الحقول' });
+  }
+  if (['ECONNREFUSED', 'ENOTFOUND', 'ETIMEDOUT', '28P01', '3D000', '57P01'].includes(err?.code)) {
+    console.error('[db] الاتصال بالقاعدة فشل:', err.code, err.message);
+    return res.status(503).json({ error: 'تعذّر الاتصال بقاعدة البيانات — تحقق من DATABASE_URL أو أعد المحاولة بعد قليل' });
   }
   console.error('[api]', err);
   res.status(500).json({ error: 'خطأ في الخادم', detail: process.env.NODE_ENV === 'production' ? undefined : String(err?.message || err) });
 });
 
-// احتياط: قاعدة البيانات تُغلق بأمان
-process.on('SIGINT', () => { try { db.close(); } catch {} process.exit(0); });
+// إغلاق آمن (PGlite يكتب ملفاته عند الإغلاق)
+for (const sig of ['SIGINT', 'SIGTERM']) {
+  process.on(sig, () => { db.close().catch(() => {}).finally(() => process.exit(0)); });
+}
 
 if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, HOST, () => {
     console.log(`\n  🥗 Nutrition Clinic API  →  http://localhost:${PORT}`);
-    console.log(`     قاعدة البيانات: ${db.name}`);
+    console.log(`     قاعدة البيانات: ${DB_LABEL}`);
     console.log(`     الواجهة: ${fs.existsSync(path.join(WEB_DIST, 'index.html')) ? 'مقدمة من نفس المنفذ' : 'وضع التطوير (Vite)\n'}`);
   });
 }

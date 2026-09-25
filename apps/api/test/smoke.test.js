@@ -33,7 +33,7 @@ async function req(method, url, { body, token } = {}) {
 }
 
 const server = spawn(process.execPath, [path.join(API_DIR, 'server.js')], {
-  env: { ...process.env, PORT, HOST: '127.0.0.1', CLINIC_DATA_DIR: DATA, CLINIC_DB_PATH: path.join(DATA, 'test.sqlite'), JWT_SECRET: 'test-secret', ADMIN_PASSWORD: 'admin123' },
+  env: { ...process.env, PORT, HOST: '127.0.0.1', CLINIC_DATA_DIR: DATA, JWT_SECRET: 'test-secret', ADMIN_PASSWORD: 'admin123' },
   stdio: ['ignore', 'pipe', 'pipe'],
 });
 let serverLog = '';
@@ -132,7 +132,8 @@ try {
   check('نسخ برنامج مسموح', (await req('POST', `/api/diet-plans/${plan.json?.id}/duplicate`, { token })).status === 201);
 
   // ---------- المواعيد ----------
-  const today = new Date().toISOString().slice(0, 10);
+  // «اليوم» بتوقيت العيادة (نفس ما يستخدمه الخادم) كي لا يفشل الاختبار قرب منتصف الليل UTC
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: process.env.CLINIC_TZ || 'Africa/Khartoum' }).format(new Date());
   const t0 = (await req('GET', '/api/appointments/today', { token })).json.total;
   const appt = await req('POST', '/api/appointments', { token, body: { patient_id: pid, date: today, time: '21:15', duration_min: 45, visit_type: 'followup' } });
   check('تسجيل موعد', appt.status === 201);
@@ -206,7 +207,7 @@ try {
   check('نسخة احتياطية JSON فيها الجداول العشرة', Object.keys(backup.json?.tables || {}).length === 10, JSON.stringify(Object.keys(backup.json?.tables || {})));
   check('نسخة المرضى محفوظة', backup.json?.tables?.patients?.some((p) => p.id === pid));
   const raw = await fetch(`${BASE}/api/backup/file`, { headers: { authorization: `Bearer ${token}` } });
-  check('تنزيل ملف القاعدة الخام بحجم منطقي', raw.ok && Number(raw.headers.get('content-length')) > 4096, String(raw.headers.get('content-length')));
+  check('تنزيل ملف النسخة الاحتياطية بحجم منطقي', raw.ok && Number(raw.headers.get('content-length')) > 4096 && /\.json/.test(raw.headers.get('content-disposition') || ''), String(raw.headers.get('content-length')));
   check(' Vacuum/فحص سلامة القاعدة', (await req('POST', '/api/maintenance/vacuum', { token })).json?.ok === true);
   const bad = await req('POST', '/api/restore', { token, body: { nope: 1 } });
   check('رفض ملف استعادة غير صالح', bad.status === 400);

@@ -1,6 +1,6 @@
 // البرامج الغذائية: خطة + وجبات، المجاميع محسوبة، ونسخة من خطة سابقة
 import { Router } from 'express';
-import { db, audit } from '../db.js';
+import { db, audit, NOW } from '../db.js';
 import { badRequest, notFound, str, requiredStr, wrap, sumMacros, isDate, toNum } from '../lib.js';
 import { canWrite } from '../auth.js';
 
@@ -30,43 +30,49 @@ function mealRow(m, i) {
   };
 }
 
-function loadPlan(id) {
-  const plan = db.prepare(`SELECT * FROM diet_plans WHERE id = ?`).get(id);
+const INSERT_MEAL = `
+  INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position)
+  VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @position)`;
+
+async function loadPlan(id) {
+  const plan = await db.get(`SELECT * FROM diet_plans WHERE id = ?`, id);
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
-  const meals = db.prepare(`SELECT * FROM diet_meals WHERE plan_id = ? ORDER BY position, id`).all(id);
+  const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id = ? ORDER BY position, id`, id);
   return { ...plan, meals, totals: sumMacros(meals) };
 }
 
-router.get('/', wrap((req, res) => {
+router.get('/', wrap(async (req, res) => {
   const pid = req.query.patient_id ? Number(req.query.patient_id) : null;
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT dp.*, p.first_name, p.last_name, p.file_no,
       (SELECT COUNT(*) FROM diet_meals m WHERE m.plan_id = dp.id) AS meals_count,
       (SELECT COALESCE(SUM(m.kcal),0) FROM diet_meals m WHERE m.plan_id = dp.id) AS kcal_total
     FROM diet_plans dp JOIN patients p ON p.id = dp.patient_id
     ${pid ? 'WHERE dp.patient_id = ?' : ''}
     ORDER BY dp.id DESC LIMIT 500
-  `).all(...(pid ? [pid] : []));
+  `, ...(pid ? [pid] : []));
   res.json({ items: rows });
 }));
 
 router.get('/meal-template', wrap((req, res) => res.json({ items: MEAL_TEMPLATE })));
 
-router.get('/:id(\\d+)', wrap((req, res) => res.json(loadPlan(Number(req.params.id)))));
+router.get('/:id(\\d+)', wrap(async (req, res) => res.json(await loadPlan(Number(req.params.id)))));
 
-router.post('/', canWrite(), wrap((req, res) => {
+router.post('/', canWrite(), wrap(async (req, res) => {
   const patientId = Number(req.body.patient_id);
   if (!patientId) throw badRequest('patient_id مطلوب');
+  if (!(await db.get(`SELECT id FROM patients WHERE id=?`, patientId))) throw badRequest('رقم المريض غير موجود');
   const meals = Array.isArray(req.body.meals) ? req.body.meals.map(mealRow) : [];
-  const newId = db.transaction(() => {
-    const p = db.prepare(`
+  const title = requiredStr(req.body.title, 'عنوان البرنامج', 160);
+  const newId = await db.tx(async () => {
+    const planId = await db.insert(`
       INSERT INTO diet_plans (patient_id, title, start_date, end_date, target_kcal, target_protein_g,
         target_carbs_g, target_fat_g, advice, status, created_by)
       VALUES (@patient_id, @title, @start_date, @end_date, @target_kcal, @target_protein_g,
         @target_carbs_g, @target_fat_g, @advice, @status, @created_by)
-    `).run({
+    `, {
       patient_id: patientId,
-      title: requiredStr(req.body.title, 'عنوان البرنامج', 160),
+      title,
       start_date: isDate(String(req.body.start_date || '')) ? req.body.start_date : null,
       end_date: isDate(String(req.body.end_date || '')) ? req.body.end_date : null,
       target_kcal: toNum(req.body.target_kcal),
@@ -77,31 +83,29 @@ router.post('/', canWrite(), wrap((req, res) => {
       status: ['draft', 'active', 'archived'].includes(req.body.status) ? req.body.status : 'draft',
       created_by: req.user.id,
     });
-    const ins = db.prepare(`
-      INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position)
-      VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @position)
-    `);
-    for (const m of meals) ins.run({ ...m, plan_id: p.lastInsertRowid });
-    return p.lastInsertRowid;
-  })();
-  audit({ userId: req.user.id, action: 'plan.create', entity: 'diet_plans', entityId: newId });
-  res.status(201).json(loadPlan(newId));
+    for (const m of meals) await db.run(INSERT_MEAL, { ...m, plan_id: planId });
+    return planId;
+  });
+  await audit({ userId: req.user.id, action: 'plan.create', entity: 'diet_plans', entityId: newId });
+  res.status(201).json(await loadPlan(newId));
 }));
 
 // تعديل الخطة + استبدال الوجبات بالكامل (أبسط وأأمن للمحرر)
-router.put('/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const plan = db.prepare(`SELECT * FROM diet_plans WHERE id=?`).get(id);
+  const plan = await db.get(`SELECT * FROM diet_plans WHERE id=?`, id);
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
-  db.transaction(() => {
-    db.prepare(`
+  const newMeals = Array.isArray(req.body.meals) ? req.body.meals.map(mealRow) : null; // تحقق قبل أي كتابة
+  const title = requiredStr(req.body.title ?? plan.title, 'عنوان البرنامج', 160);
+  await db.tx(async () => {
+    await db.run(`
       UPDATE diet_plans SET title=@title, start_date=@start_date, end_date=@end_date,
         target_kcal=@target_kcal, target_protein_g=@target_protein_g, target_carbs_g=@target_carbs_g,
-        target_fat_g=@target_fat_g, advice=@advice, status=@status, updated_at=datetime('now')
+        target_fat_g=@target_fat_g, advice=@advice, status=@status, updated_at=${NOW}
       WHERE id=@id
-    `).run({
+    `, {
       id,
-      title: requiredStr(req.body.title ?? plan.title, 'عنوان البرنامج', 160),
+      title,
       start_date: req.body.start_date !== undefined ? (isDate(String(req.body.start_date)) ? req.body.start_date : null) : plan.start_date,
       end_date: req.body.end_date !== undefined ? (isDate(String(req.body.end_date)) ? req.body.end_date : null) : plan.end_date,
       target_kcal: req.body.target_kcal !== undefined ? toNum(req.body.target_kcal) : plan.target_kcal,
@@ -111,64 +115,58 @@ router.put('/:id(\\d+)', canWrite(), wrap((req, res) => {
       advice: req.body.advice !== undefined ? str(req.body.advice, 4000) : plan.advice,
       status: ['draft', 'active', 'archived'].includes(req.body.status) ? req.body.status : plan.status,
     });
-    if (Array.isArray(req.body.meals)) {
-      db.prepare(`DELETE FROM diet_meals WHERE plan_id=?`).run(id);
-      const ins = db.prepare(`
-        INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position)
-        VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @position)
-      `);
-      req.body.meals.map(mealRow).forEach((m) => ins.run({ ...m, plan_id: id }));
+    if (newMeals) {
+      await db.run(`DELETE FROM diet_meals WHERE plan_id=?`, id);
+      for (const m of newMeals) await db.run(INSERT_MEAL, { ...m, plan_id: id });
     }
-  })();
-  audit({ userId: req.user.id, action: 'plan.update', entity: 'diet_plans', entityId: id });
-  res.json(loadPlan(id));
+  });
+  await audit({ userId: req.user.id, action: 'plan.update', entity: 'diet_plans', entityId: id });
+  res.json(await loadPlan(id));
 }));
 
 // تفعيل خطة (واحدة نشطة فقط لكل مريض)
-router.post('/:id(\\d+)/activate', canWrite(), wrap((req, res) => {
+router.post('/:id(\\d+)/activate', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const plan = db.prepare(`SELECT * FROM diet_plans WHERE id=?`).get(id);
+  const plan = await db.get(`SELECT * FROM diet_plans WHERE id=?`, id);
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
-  db.transaction(() => {
-    db.prepare(`UPDATE diet_plans SET status='archived' WHERE patient_id=? AND status='active' AND id<>?`).run(plan.patient_id, id);
-    db.prepare(`UPDATE diet_plans SET status='active', updated_at=datetime('now') WHERE id=?`).run(id);
-  })();
-  audit({ userId: req.user.id, action: 'plan.activate', entity: 'diet_plans', entityId: id });
-  res.json(loadPlan(id));
+  await db.tx(async () => {
+    await db.run(`UPDATE diet_plans SET status='archived' WHERE patient_id=? AND status='active' AND id<>?`, plan.patient_id, id);
+    await db.run(`UPDATE diet_plans SET status='active', updated_at=${NOW} WHERE id=?`, id);
+  });
+  await audit({ userId: req.user.id, action: 'plan.activate', entity: 'diet_plans', entityId: id });
+  res.json(await loadPlan(id));
 }));
 
 // تكرار خطة لمريض آخر أو لنفس المريض
-router.post('/:id(\\d+)/duplicate', canWrite(), wrap((req, res) => {
+router.post('/:id(\\d+)/duplicate', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const plan = db.prepare(`SELECT * FROM diet_plans WHERE id=?`).get(id);
+  const plan = await db.get(`SELECT * FROM diet_plans WHERE id=?`, id);
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
-  const meals = db.prepare(`SELECT * FROM diet_meals WHERE plan_id=? ORDER BY position, id`).all(id);
-  const newId = db.transaction(() => {
-    const info = db.prepare(`
+  const targetPatient = Number(req.body.patient_id) || plan.patient_id;
+  if (!(await db.get(`SELECT id FROM patients WHERE id=?`, targetPatient))) throw badRequest('رقم المريض غير موجود');
+  const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id=? ORDER BY position, id`, id);
+  const newId = await db.tx(async () => {
+    const planId = await db.insert(`
       INSERT INTO diet_plans (patient_id, title, start_date, end_date, target_kcal, target_protein_g,
         target_carbs_g, target_fat_g, advice, status, created_by)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
-    `).run(
-      Number(req.body.patient_id) || plan.patient_id,
+    `,
+      targetPatient,
       `${plan.title} — نسخة`, plan.start_date, plan.end_date, plan.target_kcal, plan.target_protein_g,
       plan.target_carbs_g, plan.target_fat_g, plan.advice, req.user.id,
     );
-    const ins = db.prepare(`
-      INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-    for (const m of meals) ins.run(info.lastInsertRowid, m.slot, m.slot_time, m.title, m.items, m.portions, m.kcal, m.protein_g, m.carbs_g, m.fat_g, m.position);
-    return info.lastInsertRowid;
-  })();
-  audit({ userId: req.user.id, action: 'plan.duplicate', entity: 'diet_plans', entityId: newId, detail: { from: id } });
-  res.status(201).json(loadPlan(newId));
+    for (const m of meals) await db.run(INSERT_MEAL, { ...m, plan_id: planId });
+    return planId;
+  });
+  await audit({ userId: req.user.id, action: 'plan.duplicate', entity: 'diet_plans', entityId: newId, detail: { from: id } });
+  res.status(201).json(await loadPlan(newId));
 }));
 
-router.delete('/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.delete('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!db.prepare(`SELECT id FROM diet_plans WHERE id=?`).get(id)) throw notFound();
-  db.prepare(`DELETE FROM diet_plans WHERE id=?`).run(id);
-  audit({ userId: req.user.id, action: 'plan.delete', entity: 'diet_plans', entityId: id });
+  if (!(await db.get(`SELECT id FROM diet_plans WHERE id=?`, id))) throw notFound();
+  await db.run(`DELETE FROM diet_plans WHERE id=?`, id);
+  await audit({ userId: req.user.id, action: 'plan.delete', entity: 'diet_plans', entityId: id });
   res.json({ deleted: true, id });
 }));
 

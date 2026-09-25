@@ -14,9 +14,9 @@ function assertDate(v, label = 'التاريخ') {
 }
 
 // ---------------- الزيارات ----------------
-router.get('/visits', wrap((req, res) => {
+router.get('/visits', wrap(async (req, res) => {
   const pid = req.query.patient_id ? Number(req.query.patient_id) : null;
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT v.*, p.first_name, p.last_name, p.file_no, u.full_name AS staff_name,
            (SELECT COUNT(*) FROM measurements m WHERE m.visit_id = v.id) AS measurements_count,
            (SELECT COUNT(*) FROM payments pa WHERE pa.appointment_id IN
@@ -27,28 +27,29 @@ router.get('/visits', wrap((req, res) => {
     ${pid ? 'WHERE v.patient_id = ?' : ''}
     ORDER BY v.visit_date DESC, v.id DESC
     LIMIT 500
-  `).all(...(pid ? [pid] : []));
+  `, ...(pid ? [pid] : []));
   res.json({ items: rows });
 }));
 
-router.post('/visits', canWrite(), wrap((req, res) => {
+router.post('/visits', canWrite(), wrap(async (req, res) => {
   const patientId = Number(req.body.patient_id);
   if (!patientId) throw badRequest('patient_id مطلوب');
   const visitDate = assertDate(req.body.visit_date, 'تاريخ الزيارة');
   const type = VISIT_TYPES.includes(req.body.visit_type) ? req.body.visit_type : 'followup';
-  const info = db.prepare(`
+  if (!(await db.get(`SELECT id FROM patients WHERE id=?`, patientId))) throw badRequest('رقم المريض غير موجود');
+  const newId = await db.insert(`
     INSERT INTO visits (patient_id, visit_date, visit_type, reason, created_by)
     VALUES (?, ?, ?, ?, ?)
-  `).run(patientId, visitDate, type, str(req.body.reason, 1000), req.user.id);
-  audit({ userId: req.user.id, action: 'visit.create', entity: 'visits', entityId: info.lastInsertRowid });
-  res.status(201).json(db.prepare(`SELECT * FROM visits WHERE id = ?`).get(info.lastInsertRowid));
+  `, patientId, visitDate, type, str(req.body.reason, 1000), req.user.id);
+  await audit({ userId: req.user.id, action: 'visit.create', entity: 'visits', entityId: newId });
+  res.status(201).json(await db.get(`SELECT * FROM visits WHERE id = ?`, newId));
 }));
 
-router.delete('/visits/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.delete('/visits/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!db.prepare(`SELECT id FROM visits WHERE id=?`).get(id)) throw notFound();
-  db.prepare(`DELETE FROM visits WHERE id=?`).run(id);
-  audit({ userId: req.user.id, action: 'visit.delete', entity: 'visits', entityId: id });
+  if (!(await db.get(`SELECT id FROM visits WHERE id=?`, id))) throw notFound();
+  await db.run(`DELETE FROM visits WHERE id=?`, id);
+  await audit({ userId: req.user.id, action: 'visit.delete', entity: 'visits', entityId: id });
   res.json({ deleted: true, id });
 }));
 
@@ -88,51 +89,53 @@ function normalizeMeasure(body, existing = {}) {
   return out;
 }
 
-router.get('/measurements', wrap((req, res) => {
+router.get('/measurements', wrap(async (req, res) => {
   const pid = req.query.patient_id ? Number(req.query.patient_id) : null;
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT m.*, v.visit_type FROM measurements m
     LEFT JOIN visits v ON v.id = m.visit_id
     ${pid ? 'WHERE m.patient_id = ?' : ''}
     ORDER BY m.measured_on DESC, m.id DESC LIMIT 1000
-  `).all(...(pid ? [pid] : []));
+  `, ...(pid ? [pid] : []));
   res.json({ items: rows.map(decorate) });
 }));
 
-router.post('/measurements', canWrite(), wrap((req, res) => {
+router.post('/measurements', canWrite(), wrap(async (req, res) => {
   const data = normalizeMeasure(req.body);
-  const heightCm = data.height_cm ?? db.prepare(`SELECT height_cm FROM patients WHERE id=?`).get(data.patient_id)?.height_cm;
+  const patient = await db.get(`SELECT height_cm FROM patients WHERE id=?`, data.patient_id);
+  if (!patient) throw badRequest('رقم المريض غير موجود');
+  const heightCm = data.height_cm ?? patient.height_cm;
   data.height_cm = heightCm ?? null;
   data.bmi = calcBMI(data.weight_kg, heightCm); // يُخزَّن للعرض فقط — المصدر دائماً الحساب
-  const info = db.prepare(`
+  const newId = await db.insert(`
     INSERT INTO measurements (patient_id, visit_id, measured_on, weight_kg, height_cm, bmi, waist_cm,
       chest_cm, hip_cm, body_fat_pct, notes, created_by)
     VALUES (@patient_id, @visit_id, @measured_on, @weight_kg, @height_cm, @bmi, @waist_cm,
             @chest_cm, @hip_cm, @body_fat_pct, @notes, @created_by)
-  `).run({ ...data, created_by: req.user.id });
-  audit({ userId: req.user.id, action: 'measurement.create', entity: 'measurements', entityId: info.lastInsertRowid });
-  res.status(201).json(decorate(db.prepare(`SELECT * FROM measurements WHERE id=?`).get(info.lastInsertRowid)));
+  `, { ...data, created_by: req.user.id });
+  await audit({ userId: req.user.id, action: 'measurement.create', entity: 'measurements', entityId: newId });
+  res.status(201).json(decorate(await db.get(`SELECT * FROM measurements WHERE id=?`, newId)));
 }));
 
-router.put('/measurements/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.put('/measurements/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare(`SELECT * FROM measurements WHERE id=?`).get(id);
+  const existing = await db.get(`SELECT * FROM measurements WHERE id=?`, id);
   if (!existing) throw notFound();
   const data = normalizeMeasure(req.body, existing);
   data.bmi = calcBMI(data.weight_kg, data.height_cm);
-  db.prepare(`
+  await db.run(`
     UPDATE measurements SET visit_id=@visit_id, measured_on=@measured_on, weight_kg=@weight_kg,
       height_cm=@height_cm, bmi=@bmi, waist_cm=@waist_cm, chest_cm=@chest_cm, hip_cm=@hip_cm,
       body_fat_pct=@body_fat_pct, notes=@notes WHERE id=@id
-  `).run({ ...data, id });
-  audit({ userId: req.user.id, action: 'measurement.update', entity: 'measurements', entityId: id });
-  res.json(decorate(db.prepare(`SELECT * FROM measurements WHERE id=?`).get(id)));
+  `, { ...data, id });
+  await audit({ userId: req.user.id, action: 'measurement.update', entity: 'measurements', entityId: id });
+  res.json(decorate(await db.get(`SELECT * FROM measurements WHERE id=?`, id)));
 }));
 
-router.delete('/measurements/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.delete('/measurements/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  if (!db.prepare(`SELECT id FROM measurements WHERE id=?`).get(id)) throw notFound();
-  db.prepare(`DELETE FROM measurements WHERE id=?`).run(id);
-  audit({ userId: req.user.id, action: 'measurement.delete', entity: 'measurements', entityId: id });
+  if (!(await db.get(`SELECT id FROM measurements WHERE id=?`, id))) throw notFound();
+  await db.run(`DELETE FROM measurements WHERE id=?`, id);
+  await audit({ userId: req.user.id, action: 'measurement.delete', entity: 'measurements', entityId: id });
   res.json({ deleted: true, id });
 }));

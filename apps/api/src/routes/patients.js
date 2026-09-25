@@ -1,9 +1,9 @@
 // إدارة المرضى: CRUD + بحث سريع + ملف المريض الشامل في صفحة واحدة
 import { Router } from 'express';
-import { db, nextFileNo, audit } from '../db.js';
+import { db, nextFileNo, audit, NOW } from '../db.js';
 import {
   badRequest, conflict, notFound, pick, str, requiredStr, wrap,
-  calcBMI, bmiCategory, idealWeight, ageFromBirthDate, sumMacros, isDate, toNum,
+  calcBMI, bmiCategory, idealWeight, ageFromBirthDate, sumMacros, isDate, toNum, todayISO,
 } from '../lib.js';
 import { canWrite } from '../auth.js';
 
@@ -57,21 +57,21 @@ function decorate(row) {
 }
 
 // ---------- قائمة + بحث سريع ----------
-router.get('/', wrap((req, res) => {
+router.get('/', wrap(async (req, res) => {
   const q = String(req.query.q || '').trim();
   const status = ['active', 'inactive', 'archived'].includes(req.query.status) ? req.query.status : null;
   const where = [];
   const params = {};
   if (q) {
-    where.push(`(p.first_name LIKE @q OR p.last_name LIKE @q OR (p.first_name || ' ' || p.last_name) LIKE @q
-                 OR p.file_no LIKE @q OR IFNULL(p.phone,'') LIKE @q)`);
+    where.push(`(p.first_name ILIKE @q OR p.last_name ILIKE @q OR (p.first_name || ' ' || p.last_name) ILIKE @q
+                 OR p.file_no ILIKE @q OR COALESCE(p.phone,'') ILIKE @q)`);
     params.q = `%${q}%`;
   }
   if (status) { where.push(`p.status = @status`); params.status = status; }
 
   const sortMap = {
     file_no: 'p.file_no',
-    name: 'p.last_name COLLATE NOCASE',
+    name: 'lower(p.last_name)',
     created: 'p.created_at',
   };
   const sort = sortMap[String(req.query.sort || 'created')] || sortMap.created;
@@ -79,14 +79,14 @@ router.get('/', wrap((req, res) => {
   const offset = Math.max(Number(req.query.offset) || 0, 0);
 
   const whereSql = where.length ? `WHERE ${where.join(' AND ')}` : '';
-  const total = db.prepare(`SELECT COUNT(*) AS n FROM patients p ${whereSql}`).get(params).n;
+  const total = (await db.get(`SELECT COUNT(*) AS n FROM patients p ${whereSql}`, params)).n;
 
-  const rows = db.prepare(`
+  const rows = await db.all(`
     SELECT p.*,
            v.visit_date AS last_visit,
            m.weight_kg  AS last_weight,
            m.bmi        AS last_bmi,
-           IFNULL(f.paid_total, 0) AS paid_total,
+           COALESCE(f.paid_total, 0) AS paid_total,
            (SELECT COUNT(*) FROM appointments a WHERE a.patient_id = p.id AND a.status='scheduled') AS upcoming_count
     FROM patients p
     LEFT JOIN visits v ON v.id = (SELECT id FROM visits x WHERE x.patient_id = p.id ORDER BY visit_date DESC LIMIT 1)
@@ -95,7 +95,7 @@ router.get('/', wrap((req, res) => {
     ${whereSql}
     ORDER BY ${sort} DESC, p.id DESC
     LIMIT @limit OFFSET @offset
-  `).all({ ...params, limit, offset });
+  `, { ...params, limit, offset });
 
   res.json({
     total,
@@ -109,21 +109,27 @@ router.get('/', wrap((req, res) => {
 }));
 
 // ---------- إنشاء ----------
-router.post('/', canWrite(), wrap((req, res) => {
+router.post('/', canWrite(), wrap(async (req, res) => {
   const p = normalizePatient(req.body);
-  const info = db.prepare(`
+  // رقم الملف + الإدخال في معاملة واحدة مع قفل كي لا يأخذ مريضان نفس الرقم في نفس اللحظة
+  const fileNo = { value: null };
+  const newId = await db.tx(async () => {
+    await db.get(`SELECT pg_advisory_xact_lock(724302)`);
+    fileNo.value = await nextFileNo();
+    return db.insert(`
     INSERT INTO patients (file_no, first_name, last_name, phone, birth_date, gender, height_cm,
                           start_weight, goal_weight, goal, notes, status, created_by)
     VALUES (@file_no, @first_name, @last_name, @phone, @birth_date, @gender, @height_cm,
             @start_weight, @goal_weight, @goal, @notes, @status, @created_by)
-  `).run({ ...p, file_no: nextFileNo(), created_by: req.user.id });
-  audit({ userId: req.user.id, action: 'patient.create', entity: 'patients', entityId: info.lastInsertRowid, detail: { file_no: p.file_no } });
-  res.status(201).json(getPatient(info.lastInsertRowid));
+  `, { ...p, file_no: fileNo.value, created_by: req.user.id });
+  });
+  await audit({ userId: req.user.id, action: 'patient.create', entity: 'patients', entityId: newId, detail: { file_no: fileNo.value } });
+  res.status(201).json(await getPatient(newId));
 }));
 
 // ---------- ملف المريض الشامل (صفحة واحدة) ----------
-function getPatient(id) {
-  const row = db.prepare(`
+async function getPatient(id) {
+  const row = await db.get(`
     SELECT p.*,
            v.visit_date AS last_visit,
            m.weight_kg AS last_weight, m.bmi AS last_bmi, m.measured_on AS last_measured_on
@@ -131,49 +137,52 @@ function getPatient(id) {
     LEFT JOIN visits v ON v.id = (SELECT id FROM visits x WHERE x.patient_id = p.id ORDER BY visit_date DESC LIMIT 1)
     LEFT JOIN measurements m ON m.id = (SELECT id FROM measurements y WHERE y.patient_id = p.id ORDER BY measured_on DESC, id DESC LIMIT 1)
     WHERE p.id = ?
-  `).get(id);
+  `, id);
   if (!row) throw notFound('المريض غير موجود');
   return decorate(row);
 }
 
-router.get('/:id(\\d+)', wrap((req, res) => res.json(getPatient(Number(req.params.id)))));
+router.get('/:id(\\d+)', wrap(async (req, res) => res.json(await getPatient(Number(req.params.id)))));
 
-router.get('/:id(\\d+)/profile', wrap((req, res) => {
+router.get('/:id(\\d+)/profile', wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const patient = getPatient(id);
+  const patient = await getPatient(id);
 
-  const visits = db.prepare(`
+  const visits = await db.all(`
     SELECT v.*, u.full_name AS staff_name,
            (SELECT COUNT(*) FROM measurements m WHERE m.visit_id = v.id) AS has_measurements
     FROM visits v LEFT JOIN users u ON u.id = v.created_by
     WHERE v.patient_id = ? ORDER BY v.visit_date DESC, v.id DESC
-  `).all(id);
+  `, id);
 
-  const measurements = db.prepare(`
+  const measurements = (await db.all(`
     SELECT m.*, u.full_name AS staff_name FROM measurements m
     LEFT JOIN users u ON u.id = m.created_by
     WHERE m.patient_id = ? ORDER BY m.measured_on ASC, m.id ASC
-  `).all(id).map((m) => ({
+  `, id)).map((m) => ({
     ...m,
     bmi: calcBMI(m.weight_kg, m.height_cm ?? patient.height_cm),
     bmi_category: bmiCategory(calcBMI(m.weight_kg, m.height_cm ?? patient.height_cm))?.label ?? null,
     waist_hip_ratio: m.waist_cm && m.hip_cm ? Math.round((m.waist_cm / m.hip_cm) * 100) / 100 : null,
   }));
 
-  const plans = db.prepare(`SELECT * FROM diet_plans WHERE patient_id = ? ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id DESC`).all(id)
-    .map((pl) => {
-      const meals = db.prepare(`SELECT * FROM diet_meals WHERE plan_id = ? ORDER BY position, id`).all(pl.id);
-      const totals = sumMacros(meals);
-      return { ...pl, meals, totals, meals_count: meals.length };
-    });
+  const planRows = await db.all(`SELECT * FROM diet_plans WHERE patient_id = ? ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id DESC`, id);
+  // كل الوجبات في استعلام واحد بدل استعلام لكل خطة (أسرع بكثير على قاعدة بعيدة)
+  const allMeals = planRows.length
+    ? await db.all(`SELECT * FROM diet_meals WHERE plan_id = ANY(?::int[]) ORDER BY position, id`, planRows.map((pl) => pl.id))
+    : [];
+  const plans = planRows.map((pl) => {
+    const meals = allMeals.filter((m) => m.plan_id === pl.id);
+    return { ...pl, meals, totals: sumMacros(meals), meals_count: meals.length };
+  });
 
-  const appointments = db.prepare(`SELECT * FROM appointments WHERE patient_id = ? ORDER BY date DESC, time DESC LIMIT 200`).all(id);
+  const appointments = await db.all(`SELECT * FROM appointments WHERE patient_id = ? ORDER BY date DESC, time DESC LIMIT 200`, id);
 
-  const payments = db.prepare(`
+  const payments = await db.all(`
     SELECT pa.*, u.full_name AS staff_name FROM payments pa
     LEFT JOIN users u ON u.id = pa.recorded_by
     WHERE pa.patient_id = ? ORDER BY pa.paid_on DESC, pa.id DESC
-  `).all(id);
+  `, id);
   const paidTotal = payments.filter((x) => !x.voided).reduce((s, x) => s + x.amount, 0);
   const visitCount = new Set(measurements.map((m) => m.visit_id ?? m.id)).size;
 
@@ -201,7 +210,7 @@ router.get('/:id(\\d+)/profile', wrap((req, res) => {
     appointments,
     next_appointment: appointments
       .filter((a) => a.status === 'scheduled' || a.status === 'confirmed')
-      .filter((a) => a.date >= new Date().toISOString().slice(0, 10))
+      .filter((a) => a.date >= todayISO())
       .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))[0] ?? null,
     payments,
     financials: {
@@ -224,46 +233,45 @@ router.get('/:id(\\d+)/profile', wrap((req, res) => {
 }));
 
 // ---------- تحديث ----------
-router.put('/:id(\\d+)', canWrite(), wrap((req, res) => {
+router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const existing = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(id);
+  const existing = await db.get(`SELECT * FROM patients WHERE id = ?`, id);
   if (!existing) throw notFound('المريض غير موجود');
   const p = { ...existing, ...normalizePatient(req.body, { partial: true }) };
-  db.prepare(`
+  await db.run(`
     UPDATE patients SET first_name=@first_name, last_name=@last_name, phone=@phone, birth_date=@birth_date,
       gender=@gender, height_cm=@height_cm, start_weight=@start_weight, goal_weight=@goal_weight,
-      goal=@goal, notes=@notes, status=@status, updated_at=datetime('now')
+      goal=@goal, notes=@notes, status=@status, updated_at=${NOW}
     WHERE id=@id
-  `).run({ ...p, id });
-  audit({ userId: req.user.id, action: 'patient.update', entity: 'patients', entityId: id });
-  res.json(getPatient(id));
+  `, { ...p, id });
+  await audit({ userId: req.user.id, action: 'patient.update', entity: 'patients', entityId: id });
+  res.json(await getPatient(id));
 }));
 
 // ---------- حذف (للمدير فقط) ----------
-router.delete('/:id(\\d+)', canWrite(), (req, res, next) => {
+router.delete('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const row = db.prepare(`SELECT id, file_no FROM patients WHERE id = ?`).get(id);
-  if (!row) return next(notFound('المريض غير موجود'));
+  const row = await db.get(`SELECT id, file_no FROM patients WHERE id = ?`, id);
+  if (!row) throw notFound('المريض غير موجود');
   if (req.user.role !== 'admin') {
-    // الحذفsoft للحماية: أرشفة بدل التدمير لغير المدير
-    db.prepare(`UPDATE patients SET status='archived', updated_at=datetime('now') WHERE id=?`).run(id);
-    audit({ userId: req.user.id, action: 'patient.archive', entity: 'patients', entityId: id });
+    // حذف ناعم للحماية: أرشفة بدل التدمير لغير المدير
+    await db.run(`UPDATE patients SET status='archived', updated_at=${NOW} WHERE id=?`, id);
+    await audit({ userId: req.user.id, action: 'patient.archive', entity: 'patients', entityId: id });
     return res.json({ archived: true, id });
   }
-  db.prepare(`DELETE FROM patients WHERE id = ?`).run(id);
-  audit({ userId: req.user.id, action: 'patient.delete', entity: 'patients', entityId: id, detail: { file_no: row.file_no } });
+  await db.run(`DELETE FROM patients WHERE id = ?`, id);
+  await audit({ userId: req.user.id, action: 'patient.delete', entity: 'patients', entityId: id, detail: { file_no: row.file_no } });
   res.json({ deleted: true, id });
-});
+}));
 
 // ---------- موافقات: هل الملف مستخدم في عمليات؟ ----------
-router.get('/:id(\\d+)/warnings', wrap((req, res) => {
+router.get('/:id(\\d+)/warnings', wrap(async (req, res) => {
   const id = Number(req.params.id);
-  const count = (sql) => db.prepare(sql).get(id).n;
-  res.json({
-    measurements: count(`SELECT COUNT(*) n FROM measurements WHERE patient_id=?`),
-    visits: count(`SELECT COUNT(*) n FROM visits WHERE patient_id=?`),
-    plans: count(`SELECT COUNT(*) n FROM diet_plans WHERE patient_id=?`),
-    appointments: count(`SELECT COUNT(*) n FROM appointments WHERE patient_id=?`),
-    payments: count(`SELECT COUNT(*) n FROM payments WHERE patient_id=?`),
-  });
+  res.json(await db.get(`
+    SELECT (SELECT COUNT(*) FROM measurements WHERE patient_id=?) AS measurements,
+           (SELECT COUNT(*) FROM visits       WHERE patient_id=?) AS visits,
+           (SELECT COUNT(*) FROM diet_plans   WHERE patient_id=?) AS plans,
+           (SELECT COUNT(*) FROM appointments WHERE patient_id=?) AS appointments,
+           (SELECT COUNT(*) FROM payments     WHERE patient_id=?) AS payments
+  `, id, id, id, id, id));
 }));

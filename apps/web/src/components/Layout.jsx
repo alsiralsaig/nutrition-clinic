@@ -58,16 +58,24 @@ export function Layout({ children }) {
   const [open, setOpen] = useState(false);
   const [todayCount, setTodayCount] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
+  const [defaultPw, setDefaultPw] = useState(false);
+  const [engine, setEngine] = useState(null);
   const nav = useNavigate();
   const loc = useLocation();
 
   useEffect(() => {
     api.get('/settings').then((r) => setClinic(r.settings?.['clinic.name'] || 'عيادة التغذية')).catch(() => {});
     api.get(`/appointments/today?date=${todayISO()}`).then((r) => setTodayCount(r.total)).catch(() => {});
-    api.get('/health').then((r) => setDemoMode(r.mode === 'demo-ephemeral')).catch(() => {});
+    api.get('/health').then((r) => { setDemoMode(r.mode === 'demo-ephemeral'); setEngine(r.engine); }).catch(() => {});
+    if (user?.role === 'admin') api.get('/auth/me').then((r) => setDefaultPw(!!r.default_password)).catch(() => {});
   }, [loc.pathname]);
 
   useEffect(() => setOpen(false), [loc.pathname]);
+  useEffect(() => {
+    const off = () => setDefaultPw(false);
+    window.addEventListener('clinic:password-changed', off);
+    return () => window.removeEventListener('clinic:password-changed', off);
+  }, []);
 
   return (
     <div className="flex min-h-screen" id="app-shell">
@@ -130,15 +138,22 @@ export function Layout({ children }) {
         {demoMode && (
           <div className="no-print flex flex-wrap items-center justify-center gap-2 border-b border-sun-500/30 bg-sun-50 px-5 py-2 text-center text-[12px] font-bold text-sun-600">
             <Icon.alert />
-            وضع تجريبي على Vercel: القرص مؤقت، البيانات المحفوظة هنا تُمسح عند إعادة تشغيل الحاوية وتُزرع بيانات العرض من جديد.
-            <span className="opacity-70">للعمل الحقيقي: انشر على خادم بقرص دائم أو ارحّل إلى Vercel Postgres (README §6).</span>
+            وضع تجريبي: لا توجد قاعدة بيانات مربوطة، فالبيانات المحفوظة هنا تُمسح وتُزرع بيانات العرض من جديد.
+            <span className="opacity-70">للعمل الحقيقي: اربط Neon من Vercel ← Storage (README §9).</span>
+          </div>
+        )}
+        {defaultPw && (
+          <div className="no-print flex flex-wrap items-center justify-center gap-2 border-b border-rose-300/50 bg-rose-50 px-5 py-2 text-center text-[12.5px] font-bold text-rose-700">
+            <Icon.shield />
+            حساب المدير ما زال بكلمة المرور الافتراضية المنشورة — أي شخص يعرف الرابط يستطيع الدخول.
+            <button className="btn-danger btn-sm" onClick={() => nav('/settings', { state: { changePassword: true } })}>غيّرها الآن</button>
           </div>
         )}
         <main className="flex-1 px-3 py-4 sm:px-5 sm:py-6">
           <div className="mx-auto w-full max-w-[1420px] fade-in">{children}</div>
         </main>
         <footer className="no-print border-t border-line px-5 py-3 text-center text-[11.5px] font-bold text-ink/40">
-          نظام إدارة عيادة التغذية · البيانات محفوظة في قاعدة SQLite على خادم العيادة · إصدار 1.0
+          نظام إدارة عيادة التغذية · {engine === 'postgres' ? 'البيانات محفوظة في قاعدة PostgreSQL سحابية' : demoMode ? 'وضع تجريبي — البيانات لا تُحفظ' : 'البيانات محفوظة في قاعدة PostgreSQL على هذا الجهاز'} · إصدار 2.0
         </footer>
       </div>
     </div>

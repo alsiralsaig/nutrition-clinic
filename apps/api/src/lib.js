@@ -87,10 +87,17 @@ export function ageFromBirthDate(birthDate) {
 export const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s);
 export const isTime = (s) => typeof s === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(s);
 
-export function todayISO() {
-  const d = new Date();
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+/**
+ * تاريخ «اليوم» بتوقيت العيادة وليس توقيت الخادم (خوادم Vercel تعمل بتوقيت UTC،
+ * فبدون هذا تنقلب «مواعيد اليوم» عند الثانية صباحاً بتوقيت الخرطوم).
+ * يُغيَّر بمتغير البيئة CLINIC_TZ (افتراضياً Africa/Khartoum).
+ */
+export const CLINIC_TZ = process.env.CLINIC_TZ || 'Africa/Khartoum';
+let dateFmt;
+try { dateFmt = new Intl.DateTimeFormat('en-CA', { timeZone: CLINIC_TZ, year: 'numeric', month: '2-digit', day: '2-digit' }); }
+catch { dateFmt = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit' }); }
+export function todayISO(d = new Date()) {
+  return dateFmt.format(d); // en-CA → YYYY-MM-DD
 }
 
 /** تنظيف كائن: يترك المفاتيح المعلومة فقط */
