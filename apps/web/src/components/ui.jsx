@@ -4,10 +4,11 @@ import { useApp } from '../app-context.jsx';
 import { fmt } from '../format.js';
 
 /* ---------------------------------------------------------------- أيقونات */
-const I = (path, extra = '') => (props) => (
+// ملاحظة: className الممرَّر يُدمج مع المقاس ولا يستبدله (وإلا تمدّدت الأيقونة لتملأ الحاوية على الجوال)
+const I = (path, extra = '') => ({ className = '', ...props }) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.9}
-       strokeLinecap="round" strokeLinejoin="round" className={`h-[1.15em] w-[1.15em] shrink-0 ${extra}`}
-       aria-hidden {...props}>
+       strokeLinecap="round" strokeLinejoin="round" aria-hidden {...props}
+       className={`h-[1.15em] w-[1.15em] shrink-0 ${extra} ${className}`.trim()}>
     {path}
   </svg>
 );
