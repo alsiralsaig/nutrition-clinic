@@ -17,6 +17,7 @@ import { router as paymentRoutes } from './routes/payments.js';
 import { router as dashboardRoutes } from './routes/dashboard.js';
 import { router as reportRoutes } from './routes/reports.js';
 import { router as systemRoutes } from './routes/system.js';
+import { router as messagingRoutes, runDailyJob } from './routes/messaging.js';
 import { ensureSeed, SEED_DEMO } from './seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -85,6 +86,19 @@ app.get('/api/health', async (req, res, next) => {
 });
 app.use('/api/auth', authRoutes);
 
+// ---------- المهمة اليومية (Vercel Cron يستدعيها كل صباح — انظر vercel.json) ----------
+// Vercel يرسل «Authorization: Bearer $CRON_SECRET» تلقائياً إن ضُبط المتغير. بدونه نقبل فقط وكيل vercel-cron.
+app.get('/api/cron/daily', async (req, res, next) => {
+  try {
+    const secret = process.env.CRON_SECRET;
+    const ok = secret
+      ? req.headers.authorization === `Bearer ${secret}`
+      : /vercel-cron/i.test(String(req.headers['user-agent'] || ''));
+    if (!ok) return res.status(401).json({ error: 'غير مصرح' });
+    res.json(await runDailyJob({ source: 'cron' }));
+  } catch (e) { next(e); }
+});
+
 // ---------- مستندات الـ API لتطبيق الموبايل (قبل مسار الـ SPA العام) ----------
 const OPENAPI_FILE = path.join(__dirname, '..', 'openapi.json');
 function sendOpenApi(req, res) {
@@ -106,6 +120,7 @@ protectedApi.use('/payments', paymentRoutes);
 protectedApi.use('/dashboard', dashboardRoutes);
 protectedApi.use('/reports', reportRoutes);
 protectedApi.use('/', systemRoutes);       // /settings /backup /restore /maintenance
+protectedApi.use('/', messagingRoutes);    // /whatsapp/* /notifications /cron/daily/run
 app.use('/api', protectedApi);
 
 // ---------- واجهة الويب (بعد npm run build) ----------

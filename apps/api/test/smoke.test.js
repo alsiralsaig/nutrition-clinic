@@ -204,7 +204,7 @@ try {
 
   // ---------- النسخ الاحتياطي ----------
   const backup = await req('GET', '/api/backup', { token });
-  check('نسخة احتياطية JSON فيها الجداول العشرة', Object.keys(backup.json?.tables || {}).length === 10, JSON.stringify(Object.keys(backup.json?.tables || {})));
+  check('نسخة احتياطية JSON فيها الجداول الـ11 (مع سجل الرسائل)', Object.keys(backup.json?.tables || {}).length === 11 && 'message_log' in (backup.json?.tables || {}), JSON.stringify(Object.keys(backup.json?.tables || {})));
   check('نسخة المرضى محفوظة', backup.json?.tables?.patients?.some((p) => p.id === pid));
   const raw = await fetch(`${BASE}/api/backup/file`, { headers: { authorization: `Bearer ${token}` } });
   check('تنزيل ملف النسخة الاحتياطية بحجم منطقي', raw.ok && Number(raw.headers.get('content-length')) > 4096 && /\.json/.test(raw.headers.get('content-disposition') || ''), String(raw.headers.get('content-length')));

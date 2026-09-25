@@ -8,6 +8,14 @@ export const router = Router();
 
 const VISIT_TYPES = ['initial', 'followup', 'consult', 'plan_update', 'lab_review'];
 
+/** تقييم الالتزام 0–100 (أو null) */
+function adherenceOf(v) {
+  if (v === undefined || v === null || v === '') return null;
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 0 || n > 100) throw badRequest('نسبة الالتزام يجب أن تكون بين 0 و100');
+  return n;
+}
+
 function assertDate(v, label = 'التاريخ') {
   if (!isDate(String(v || ''))) throw badRequest(`${label} مطلوب بصيغة YYYY-MM-DD`);
   return String(v);
@@ -38,11 +46,31 @@ router.post('/visits', canWrite(), wrap(async (req, res) => {
   const type = VISIT_TYPES.includes(req.body.visit_type) ? req.body.visit_type : 'followup';
   if (!(await db.get(`SELECT id FROM patients WHERE id=?`, patientId))) throw badRequest('رقم المريض غير موجود');
   const newId = await db.insert(`
-    INSERT INTO visits (patient_id, visit_date, visit_type, reason, created_by)
-    VALUES (?, ?, ?, ?, ?)
-  `, patientId, visitDate, type, str(req.body.reason, 1000), req.user.id);
+    INSERT INTO visits (patient_id, visit_date, visit_type, reason, adherence, adherence_notes, created_by)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `, patientId, visitDate, type, str(req.body.reason, 1000), adherenceOf(req.body.adherence),
+  str(req.body.adherence_notes, 1000), req.user.id);
   await audit({ userId: req.user.id, action: 'visit.create', entity: 'visits', entityId: newId });
   res.status(201).json(await db.get(`SELECT * FROM visits WHERE id = ?`, newId));
+}));
+
+// تعديل زيارة (أهمها: تقييم الالتزام بعد انتهاء الزيارة)
+router.put('/visits/:id(\\d+)', canWrite(), wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const v = await db.get(`SELECT * FROM visits WHERE id=?`, id);
+  if (!v) throw notFound('الزيارة غير موجودة');
+  const b = req.body || {};
+  const next = {
+    visit_date: b.visit_date !== undefined ? assertDate(b.visit_date, 'تاريخ الزيارة') : v.visit_date,
+    visit_type: VISIT_TYPES.includes(b.visit_type) ? b.visit_type : v.visit_type,
+    reason: b.reason !== undefined ? str(b.reason, 1000) : v.reason,
+    adherence: b.adherence !== undefined ? adherenceOf(b.adherence) : v.adherence,
+    adherence_notes: b.adherence_notes !== undefined ? str(b.adherence_notes, 1000) : v.adherence_notes,
+  };
+  await db.run(`UPDATE visits SET visit_date=@visit_date, visit_type=@visit_type, reason=@reason,
+    adherence=@adherence, adherence_notes=@adherence_notes WHERE id=@id`, { ...next, id });
+  await audit({ userId: req.user.id, action: 'visit.update', entity: 'visits', entityId: id, detail: { adherence: next.adherence } });
+  res.json(await db.get(`SELECT * FROM visits WHERE id = ?`, id));
 }));
 
 router.delete('/visits/:id(\\d+)', canWrite(), wrap(async (req, res) => {

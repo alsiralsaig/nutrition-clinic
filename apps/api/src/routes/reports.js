@@ -2,6 +2,7 @@
 import { Router } from 'express';
 import { db, getSettings, getSetting } from '../db.js';
 import { badRequest, notFound, wrap, isDate, todayISO } from '../lib.js';
+import { adherenceSeries, bandsSummary, goalDirection, pearson } from '../adherence.js';
 
 export const router = Router();
 
@@ -141,26 +142,94 @@ router.get('/audit', wrap(async (req, res) => {
   res.json({ items: rows });
 }));
 
-/** تصدير CSV (يتوافق مع Excel، بترميز UTF-8 BOM للعربية) */
+/** الالتزام مقابل نزول الوزن — على مستوى العيادة (كل زيارة فيها تقييم = نقطة) */
+router.get('/adherence', wrap(async (req, res) => {
+  const from = isDate(String(req.query.from || '')) ? req.query.from : '0000-01-01';
+  const to = isDate(String(req.query.to || '')) ? req.query.to : '9999-12-31';
+  const visits = await db.all(`SELECT v.*, p.first_name, p.last_name, p.file_no, p.start_weight, p.goal_weight FROM visits v JOIN patients p ON p.id=v.patient_id
+                               WHERE v.adherence IS NOT NULL ORDER BY v.patient_id, v.visit_date, v.id`);
+  const pids = [...new Set(visits.map((v) => v.patient_id))];
+  const meas = pids.length ? await db.all(`SELECT * FROM measurements WHERE patient_id = ANY(?::int[]) ORDER BY measured_on, id`, pids) : [];
+  const points = [];
+  const perPatient = [];
+  for (const pid of pids) {
+    const vs = visits.filter((v) => v.patient_id === pid);
+    const dir = goalDirection(vs[0]);
+    const s1 = adherenceSeries(vs, meas.filter((m) => m.patient_id === pid), dir);
+    const inRange = s1.points.filter((pt) => pt.date >= from && pt.date <= to);
+    if (!inRange.length) continue;
+    const name = `${vs[0].first_name} ${vs[0].last_name}`;
+    for (const pt of inRange) points.push({ ...pt, patient_id: pid, patient_name: name, file_no: vs[0].file_no, goal: dir === 1 ? 'lose' : 'gain' });
+    const withLoss = inRange.filter((x) => x.weekly_progress_kg !== null);
+    perPatient.push({
+      patient_id: pid, patient_name: name, file_no: vs[0].file_no, visits: inRange.length,
+      avg_adherence: Math.round(inRange.reduce((t, x) => t + x.adherence, 0) / inRange.length),
+      goal: dir === 1 ? 'lose' : 'gain',
+      avg_weekly_progress_kg: withLoss.length ? Math.round((withLoss.reduce((t, x) => t + x.weekly_progress_kg, 0) / withLoss.length) * 100) / 100 : null,
+      total_loss_kg: inRange.at(-1).total_loss_kg,
+    });
+  }
+  const paired = points.filter((x) => x.weekly_progress_kg !== null);
+  res.json({
+    from, to, points, patients: perPatient.sort((x, y) => y.avg_adherence - x.avg_adherence),
+    bands: bandsSummary(points),
+    correlation: pearson(paired.map((x) => x.adherence), paired.map((x) => x.weekly_progress_kg)),
+    average_adherence: points.length ? Math.round(points.reduce((t, x) => t + x.adherence, 0) / points.length) : null,
+    rated_visits: points.length,
+  });
+}));
+
+/** تصدير CSV (يتوافق مع Excel، بترميز UTF-8 BOM للعربية). ?from&to للتصفية بالتاريخ، ?lang=en لعناوين إنجليزية */
 const EXPORTS = {
-  patients: `SELECT file_no AS "رقم الملف", first_name AS "الاسم", last_name AS "اللقب", phone AS "الهاتف",
+  patients: { sql: `SELECT file_no AS "رقم الملف", first_name AS "الاسم", last_name AS "اللقب", phone AS "الهاتف",
       birth_date AS "تاريخ الميلاد", gender AS "الجنس", height_cm AS "الطول", start_weight AS "وزن البداية",
-      goal_weight AS "الهدف", status AS "الحالة", created_at AS "تاريخ التسجيل" FROM patients ORDER BY id`,
-  measurements: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض",
+      goal_weight AS "الهدف", activity_level AS "مستوى النشاط", status AS "الحالة", created_at AS "تاريخ التسجيل"
+      FROM patients WHERE substr(created_at,1,10) BETWEEN @from AND @to ORDER BY id` },
+  measurements: { sql: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض",
       m.measured_on AS "التاريخ", m.weight_kg AS "الوزن", m.bmi AS "BMI", m.waist_cm AS "الخصر",
       m.hip_cm AS "الورك", m.chest_cm AS "الصدر", m.body_fat_pct AS "نسبة الدهون"
-      FROM measurements m JOIN patients p ON p.id=m.patient_id ORDER BY m.measured_on DESC`,
-  payments: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض", pa.paid_on AS "التاريخ",
-      pa.service AS "الخدمة", pa.amount AS "المبلغ", pa.method AS "الطريقة", pa.invoice_no AS "الفاتورة",
+      FROM measurements m JOIN patients p ON p.id=m.patient_id WHERE m.measured_on BETWEEN @from AND @to ORDER BY m.measured_on DESC` },
+  payments: { sql: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض", pa.paid_on AS "التاريخ",
+      pa.service AS "الخدمة", pa.amount AS "المبلغ", pa.currency AS "العملة", pa.method AS "الطريقة", pa.invoice_no AS "الفاتورة",
       pa.voided AS "ملغي"
-      FROM payments pa JOIN patients p ON p.id=pa.patient_id ORDER BY pa.paid_on DESC`,
-  appointments: `SELECT a.date AS "التاريخ", a.time AS "الوقت", p.file_no AS "رقم الملف",
-      (p.first_name||' '||p.last_name) AS "المريض", a.visit_type AS "النوع", a.status AS "الحالة", a.duration_min AS "المدة"
-      FROM appointments a JOIN patients p ON p.id=a.patient_id ORDER BY a.date DESC, a.time DESC`,
+      FROM payments pa JOIN patients p ON p.id=pa.patient_id WHERE pa.paid_on BETWEEN @from AND @to ORDER BY pa.paid_on DESC` },
+  appointments: { sql: `SELECT a.date AS "التاريخ", a.time AS "الوقت", p.file_no AS "رقم الملف",
+      (p.first_name||' '||p.last_name) AS "المريض", a.visit_type AS "النوع", a.status AS "الحالة", a.duration_min AS "المدة",
+      a.reminded_at AS "أُرسل التذكير"
+      FROM appointments a JOIN patients p ON p.id=a.patient_id WHERE a.date BETWEEN @from AND @to ORDER BY a.date DESC, a.time DESC` },
+  visits: { sql: `SELECT v.visit_date AS "التاريخ", p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض",
+      v.visit_type AS "النوع", v.reason AS "السبب", v.adherence AS "الالتزام %", v.adherence_notes AS "ملاحظات الالتزام",
+      (SELECT m.weight_kg FROM measurements m WHERE m.visit_id=v.id ORDER BY m.id DESC LIMIT 1) AS "الوزن"
+      FROM visits v JOIN patients p ON p.id=v.patient_id WHERE v.visit_date BETWEEN @from AND @to ORDER BY v.visit_date DESC` },
+  meals: { sql: `SELECT p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض", dp.title AS "الخطة", dp.status AS "حالة الخطة",
+      CASE m.day_of_week WHEN 0 THEN 'السبت' WHEN 1 THEN 'الأحد' WHEN 2 THEN 'الإثنين' WHEN 3 THEN 'الثلاثاء'
+        WHEN 4 THEN 'الأربعاء' WHEN 5 THEN 'الخميس' WHEN 6 THEN 'الجمعة' ELSE 'كل يوم' END AS "اليوم",
+      m.slot AS "الوجبة", m.slot_time AS "الوقت", m.title AS "العنوان", replace(m.items, chr(10), ' | ') AS "المكونات",
+      m.kcal AS "السعرات", m.protein_g AS "بروتين", m.carbs_g AS "كربوهيدرات", m.fat_g AS "دهون"
+      FROM diet_meals m JOIN diet_plans dp ON dp.id=m.plan_id JOIN patients p ON p.id=dp.patient_id
+      WHERE substr(dp.created_at,1,10) BETWEEN @from AND @to
+      ORDER BY dp.id DESC, m.day_of_week NULLS FIRST, m.position` },
+  messages: { sql: `SELECT ml.created_at AS "الوقت", p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض",
+      ml.kind AS "النوع", ml.to_phone AS "الرقم", ml.status AS "الحالة", ml.error AS "الخطأ"
+      FROM message_log ml LEFT JOIN patients p ON p.id=ml.patient_id
+      WHERE substr(ml.created_at,1,10) BETWEEN @from AND @to ORDER BY ml.id DESC` },
 };
 
-export function toCsv(rows) {
-  if (!rows.length) return '\uFEFFلا توجد بيانات\n';
+/** عناوين الأعمدة بالإنجليزية (?lang=en) */
+const EN_HEADERS = {
+  'رقم الملف': 'File No', 'الاسم': 'First name', 'اللقب': 'Last name', 'الهاتف': 'Phone', 'تاريخ الميلاد': 'Birth date',
+  'الجنس': 'Gender', 'الطول': 'Height (cm)', 'وزن البداية': 'Start weight', 'الهدف': 'Goal weight', 'مستوى النشاط': 'Activity level',
+  'الحالة': 'Status', 'تاريخ التسجيل': 'Registered at', 'المريض': 'Patient', 'التاريخ': 'Date', 'الوزن': 'Weight (kg)',
+  'الخصر': 'Waist (cm)', 'الورك': 'Hip (cm)', 'الصدر': 'Chest (cm)', 'نسبة الدهون': 'Body fat %', 'الخدمة': 'Service',
+  'المبلغ': 'Amount', 'العملة': 'Currency', 'الطريقة': 'Method', 'الفاتورة': 'Invoice', 'ملغي': 'Voided', 'الوقت': 'Time',
+  'النوع': 'Type', 'المدة': 'Duration (min)', 'أُرسل التذكير': 'Reminder sent at', 'السبب': 'Reason', 'الالتزام %': 'Adherence %',
+  'ملاحظات الالتزام': 'Adherence notes', 'الخطة': 'Plan', 'حالة الخطة': 'Plan status', 'اليوم': 'Day', 'الوجبة': 'Meal',
+  'العنوان': 'Title', 'المكونات': 'Items', 'السعرات': 'kcal', 'بروتين': 'Protein (g)', 'كربوهيدرات': 'Carbs (g)', 'دهون': 'Fat (g)',
+  'الرقم': 'Phone', 'الخطأ': 'Error', 'BMI': 'BMI',
+};
+
+export function toCsv(rows, lang = 'ar') {
+  if (!rows.length) return '\uFEFF' + (lang === 'en' ? 'No data' : 'لا توجد بيانات') + '\n';
   const esc = (v) => {
     if (v === null || v === undefined) return '';
     const s = String(v);
@@ -171,10 +240,27 @@ export function toCsv(rows) {
 }
 
 router.get('/export/:kind', wrap(async (req, res) => {
-  const sql = Object.prototype.hasOwnProperty.call(EXPORTS, String(req.params.kind)) ? EXPORTS[String(req.params.kind)] : null;
-  if (!sql) throw badRequest('نوع تصدير غير معروف. المتاح: ' + Object.keys(EXPORTS).join(', '));
-  const rows = await db.all(sql);
+  const kind = String(req.params.kind);
+  const def = Object.prototype.hasOwnProperty.call(EXPORTS, kind) ? EXPORTS[kind] : null;
+  if (!def) throw badRequest('نوع تصدير غير معروف. المتاح: ' + Object.keys(EXPORTS).join(', '));
+  const from = isDate(String(req.query.from || '')) ? req.query.from : '0000-01-01';
+  const to = isDate(String(req.query.to || '')) ? req.query.to : '9999-12-31';
+  const lang = req.query.lang === 'en' ? 'en' : 'ar';
+  let rows = await db.all(def.sql, { from, to });
+  if (lang === 'en') rows = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [EN_HEADERS[k] || k, v])));
   res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${req.params.kind}-${todayISO()}.csv"`);
-  res.send(toCsv(rows));
+  res.setHeader('Content-Disposition', `attachment; filename="${kind}-${todayISO()}.csv"`);
+  res.send(toCsv(rows, lang));
+}));
+
+/** تقرير الإيرادات كـ CSV (نفس فترة شاشة التقرير) */
+router.get('/revenue.csv', wrap(async (req, res) => {
+  const from = isDate(String(req.query.from || '')) ? req.query.from : '0000-01-01';
+  const to = isDate(String(req.query.to || '')) ? req.query.to : '9999-12-31';
+  const lang = req.query.lang === 'en' ? 'en' : 'ar';
+  let rows = await db.all(EXPORTS.payments.sql, { from, to });
+  if (lang === 'en') rows = rows.map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [EN_HEADERS[k] || k, v])));
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="revenue-${from}-${to}.csv"`);
+  res.send(toCsv(rows, lang));
 }));

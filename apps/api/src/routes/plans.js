@@ -1,7 +1,9 @@
 // البرامج الغذائية: خطة + وجبات، المجاميع محسوبة، ونسخة من خطة سابقة
 import { Router } from 'express';
 import { db, audit, NOW } from '../db.js';
-import { badRequest, notFound, str, requiredStr, wrap, sumMacros, isDate, toNum } from '../lib.js';
+import { badRequest, notFound, str, requiredStr, wrap, sumMacros, isDate, toNum, todayISO } from '../lib.js';
+import { getSetting } from '../db.js';
+import { ACTIVITY, GOALS, DAYS, ageFrom, inferGoal, computeTargets, generateWeeklyPlan, defaultAdvice, buildShoppingList, shoppingListText } from '../nutrition.js';
 import { canWrite } from '../auth.js';
 
 export const router = Router();
@@ -27,18 +29,46 @@ function mealRow(m, i) {
     carbs_g: toNum(m.carbs_g),
     fat_g: toNum(m.fat_g),
     position: Number.isFinite(Number(m.position)) ? Number(m.position) : i,
+    // خطة أسبوعية: 0=السبت … 6=الجمعة، وبدونه = كل يوم
+    day_of_week: m.day_of_week === null || m.day_of_week === undefined || m.day_of_week === ''
+      ? null
+      : (Number.isInteger(Number(m.day_of_week)) && Number(m.day_of_week) >= 0 && Number(m.day_of_week) <= 6
+        ? Number(m.day_of_week)
+        : (() => { throw badRequest(`يوم الوجبة #${i + 1} غير صالح (0–6)`); })()),
   };
 }
 
 const INSERT_MEAL = `
-  INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position)
-  VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @position)`;
+  INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position, day_of_week)
+  VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @position, @day_of_week)`;
+const MEAL_ORDER = 'ORDER BY day_of_week NULLS FIRST, position, id';
 
 async function loadPlan(id) {
   const plan = await db.get(`SELECT * FROM diet_plans WHERE id = ?`, id);
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
-  const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id = ? ORDER BY position, id`, id);
-  return { ...plan, meals, totals: sumMacros(meals) };
+  const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id = ? ${MEAL_ORDER}`, id);
+  return { ...plan, meals, totals: sumMacros(meals), ...weeklyInfo(meals) };
+}
+
+/** الخطة الأسبوعية: المجاميع اليومية تخص يوماً واحداً لا مجموع الأسبوع */
+function weeklyInfo(meals) {
+  const weekly = meals.some((m) => m.day_of_week !== null && m.day_of_week !== undefined);
+  if (!weekly) return { weekly: false };
+  const every = meals.filter((m) => m.day_of_week === null);
+  const by_day = DAYS.map((name, d) => {
+    const t = sumMacros([...every, ...meals.filter((m) => m.day_of_week === d)]);
+    return { day: d, name, ...t };
+  }).filter((x) => meals.some((m) => m.day_of_week === x.day) || every.length);
+  const avg = (k) => Math.round(by_day.reduce((s, d) => s + (d[k] || 0), 0) / (by_day.length || 1));
+  return { weekly: true, by_day, daily_average: { kcal: avg('kcal'), protein_g: avg('protein_g'), carbs_g: avg('carbs_g'), fat_g: avg('fat_g') } };
+}
+
+async function patientBasics(patientId) {
+  const p = await db.get(`SELECT * FROM patients WHERE id=?`, patientId);
+  if (!p) throw badRequest('رقم المريض غير موجود');
+  const m = await db.get(`SELECT weight_kg, height_cm FROM measurements WHERE patient_id=? AND weight_kg IS NOT NULL
+                          ORDER BY measured_on DESC, id DESC LIMIT 1`, patientId);
+  return { p, weight: m?.weight_kg ?? p.start_weight, height: m?.height_cm ?? p.height_cm };
 }
 
 router.get('/', wrap(async (req, res) => {
@@ -55,6 +85,61 @@ router.get('/', wrap(async (req, res) => {
 }));
 
 router.get('/meal-template', wrap((req, res) => res.json({ items: MEAL_TEMPLATE })));
+
+// ---------- توليد خطة أسبوعية ذكية ----------
+// الاحتياج بمعادلة Mifflin-St Jeor × معامل النشاط ± هدف الوزن، ثم 7 أيام × 5 وجبات من مكتبة أطعمة محلية
+// تُكيَّف كمياتها على سعرات كل وجبة. save=false → معاينة فقط، save=true → تُحفظ كمسودة.
+router.post('/generate', canWrite(), wrap(async (req, res) => {
+  const b = req.body || {};
+  const patientId = Number(b.patient_id);
+  if (!patientId) throw badRequest('patient_id مطلوب');
+  const { p, weight: w0, height: h0 } = await patientBasics(patientId);
+  const weight = toNum(b.weight_kg) ?? w0;
+  const height = toNum(b.height_cm) ?? h0;
+  const activity = ACTIVITY[b.activity_level] ? b.activity_level : (p.activity_level || 'light');
+  const goal = inferGoal({ goal: b.goal, goalWeight: p.goal_weight, weight, goalText: p.goal });
+  let targets;
+  try {
+    targets = computeTargets({ weight, height, age: ageFrom(p.birth_date), gender: p.gender, activity, goal, targetKcal: toNum(b.target_kcal) });
+  } catch (e) { throw badRequest(e.message + ' — أضف قياساً أو عدّل بيانات المريض'); }
+  const days = Math.max(1, Math.min(7, Number(b.days) || 7));
+  const { meals, by_day } = generateWeeklyPlan(targets, { days, seed: Number(b.seed) || 0 });
+  const title = str(b.title, 160) || `خطة أسبوعية ${GOALS[goal].label} — ${targets.kcal} سعرة`;
+  const advice = defaultAdvice(targets);
+  const warnings = [];
+  if (!p.gender) warnings.push('الجنس غير محدد — حُسب كأنثى');
+  if (!p.birth_date) warnings.push('تاريخ الميلاد غير مسجل — افتُرض العمر 30 سنة');
+  if (!b.save) {
+    return res.json({ preview: true, patient_id: patientId, title, targets, by_day, meals, advice, warnings,
+      activity_levels: Object.entries(ACTIVITY).map(([k, v]) => ({ key: k, ...v })), goals: Object.entries(GOALS).map(([k, v]) => ({ key: k, label: v.label })) });
+  }
+  const newId = await db.tx(async () => {
+    const planId = await db.insert(`
+      INSERT INTO diet_plans (patient_id, title, start_date, target_kcal, target_protein_g, target_carbs_g,
+        target_fat_g, advice, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`,
+    patientId, title, isDate(String(b.start_date || '')) ? b.start_date : todayISO(), targets.kcal, targets.protein_g,
+    targets.carbs_g, targets.fat_g, advice, req.user.id);
+    for (const m of meals) await db.run(INSERT_MEAL, { ...m, plan_id: planId });
+    if (b.activity_level && ACTIVITY[b.activity_level] && p.activity_level !== b.activity_level) {
+      await db.run(`UPDATE patients SET activity_level=?, updated_at=${NOW} WHERE id=?`, b.activity_level, patientId);
+    }
+    return planId;
+  });
+  await audit({ userId: req.user.id, action: 'plan.generate', entity: 'diet_plans', entityId: newId, detail: { kcal: targets.kcal, goal, activity } });
+  res.status(201).json({ ...(await loadPlan(newId)), targets, warnings });
+}));
+
+// ---------- قائمة التسوق من الخطة ----------
+router.get('/:id(\\d+)/shopping-list', wrap(async (req, res) => {
+  const plan = await loadPlan(Number(req.params.id));
+  const days = Math.max(1, Math.min(31, Number(req.query.days) || 7));
+  const p = await db.get(`SELECT id, first_name, last_name, phone FROM patients WHERE id=?`, plan.patient_id);
+  const groups = buildShoppingList(plan.meals, { days });
+  const clinicName = await getSetting('clinic.name', '');
+  const text = shoppingListText({ patientName: `${p.first_name} ${p.last_name}`, planTitle: plan.title, days, groups, clinicName });
+  res.json({ plan_id: plan.id, plan_title: plan.title, patient: p, days, groups, items_count: groups.reduce((s, g) => s + g.items.length, 0), text });
+}));
 
 router.get('/:id(\\d+)', wrap(async (req, res) => res.json(await loadPlan(Number(req.params.id)))));
 
@@ -144,7 +229,7 @@ router.post('/:id(\\d+)/duplicate', canWrite(), wrap(async (req, res) => {
   if (!plan) throw notFound('البرنامج الغذائي غير موجود');
   const targetPatient = Number(req.body.patient_id) || plan.patient_id;
   if (!(await db.get(`SELECT id FROM patients WHERE id=?`, targetPatient))) throw badRequest('رقم المريض غير موجود');
-  const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id=? ORDER BY position, id`, id);
+  const meals = await db.all(`SELECT * FROM diet_meals WHERE plan_id=? ${MEAL_ORDER}`, id);
   const newId = await db.tx(async () => {
     const planId = await db.insert(`
       INSERT INTO diet_plans (patient_id, title, start_date, end_date, target_kcal, target_protein_g,

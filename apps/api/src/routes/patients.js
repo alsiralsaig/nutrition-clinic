@@ -5,6 +5,7 @@ import {
   badRequest, conflict, notFound, pick, str, requiredStr, wrap,
   calcBMI, bmiCategory, idealWeight, ageFromBirthDate, sumMacros, isDate, toNum, todayISO,
 } from '../lib.js';
+import { adherenceSeries, goalDirection } from '../adherence.js';
 import { canWrite } from '../auth.js';
 
 export const router = Router();
@@ -12,7 +13,10 @@ export const router = Router();
 const PATIENT_FIELDS = [
   'first_name', 'last_name', 'phone', 'birth_date', 'gender', 'height_cm',
   'start_weight', 'goal_weight', 'goal', 'notes', 'status',
+  'activity_level', 'reminders_opt_in', 'daily_reminder',
 ];
+const ACTIVITY_LEVELS = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
+const flag = (v) => (v === true || v === 1 || v === '1' || v === 'true' ? 1 : 0);
 
 /** التحقق من مدخلات المريض + حساب الحقول المشتقة في السيرفر */
 function normalizePatient(input, { partial = false } = {}) {
@@ -33,6 +37,11 @@ function normalizePatient(input, { partial = false } = {}) {
   p.goal = str(p.goal, 500);
   p.notes = str(p.notes, 4000);
   p.status = ['active', 'inactive', 'archived'].includes(p.status) ? p.status : 'active';
+  p.activity_level = ACTIVITY_LEVELS.includes(p.activity_level) ? p.activity_level : null;
+  p.reminders_opt_in = p.reminders_opt_in === undefined ? 1 : flag(p.reminders_opt_in);
+  p.daily_reminder = flag(p.daily_reminder);
+  // تحديث جزئي: الحقول غير المرسلة لا تُمسّ (كان إرسال «الملاحظات» وحدها يمسح الهاتف وغيره)
+  if (partial) for (const k of PATIENT_FIELDS) if (input[k] === undefined) delete p[k];
   return p;
 }
 
@@ -118,9 +127,11 @@ router.post('/', canWrite(), wrap(async (req, res) => {
     fileNo.value = await nextFileNo();
     return db.insert(`
     INSERT INTO patients (file_no, first_name, last_name, phone, birth_date, gender, height_cm,
-                          start_weight, goal_weight, goal, notes, status, created_by)
+                          start_weight, goal_weight, goal, notes, status, activity_level,
+                          reminders_opt_in, daily_reminder, created_by)
     VALUES (@file_no, @first_name, @last_name, @phone, @birth_date, @gender, @height_cm,
-            @start_weight, @goal_weight, @goal, @notes, @status, @created_by)
+            @start_weight, @goal_weight, @goal, @notes, @status, @activity_level,
+            @reminders_opt_in, @daily_reminder, @created_by)
   `, { ...p, file_no: fileNo.value, created_by: req.user.id });
   });
   await audit({ userId: req.user.id, action: 'patient.create', entity: 'patients', entityId: newId, detail: { file_no: fileNo.value } });
@@ -169,7 +180,7 @@ router.get('/:id(\\d+)/profile', wrap(async (req, res) => {
   const planRows = await db.all(`SELECT * FROM diet_plans WHERE patient_id = ? ORDER BY CASE status WHEN 'active' THEN 0 ELSE 1 END, id DESC`, id);
   // كل الوجبات في استعلام واحد بدل استعلام لكل خطة (أسرع بكثير على قاعدة بعيدة)
   const allMeals = planRows.length
-    ? await db.all(`SELECT * FROM diet_meals WHERE plan_id = ANY(?::int[]) ORDER BY position, id`, planRows.map((pl) => pl.id))
+    ? await db.all(`SELECT * FROM diet_meals WHERE plan_id = ANY(?::int[]) ORDER BY day_of_week NULLS FIRST, position, id`, planRows.map((pl) => pl.id))
     : [];
   const plans = planRows.map((pl) => {
     const meals = allMeals.filter((m) => m.plan_id === pl.id);
@@ -200,9 +211,11 @@ router.get('/:id(\\d+)/profile', wrap(async (req, res) => {
       ? Math.round((m.weight_kg - baseline) * 10) / 10 : null,
   }));
 
+  const adherence = adherenceSeries(visits, measurements, goalDirection(patient));
   res.json({
     patient,
     visits,
+    adherence,
     measurements,
     weight_series: weightSeries,
     plans,
@@ -232,6 +245,15 @@ router.get('/:id(\\d+)/profile', wrap(async (req, res) => {
   });
 }));
 
+// ---------- الالتزام بالخطة مقابل نزول الوزن ----------
+router.get('/:id(\\d+)/adherence', wrap(async (req, res) => {
+  const id = Number(req.params.id);
+  const patient = await getPatient(id);
+  const visits = await db.all(`SELECT * FROM visits WHERE patient_id = ? ORDER BY visit_date, id`, id);
+  const measurements = await db.all(`SELECT * FROM measurements WHERE patient_id = ? ORDER BY measured_on, id`, id);
+  res.json(adherenceSeries(visits, measurements, goalDirection(patient)));
+}));
+
 // ---------- تحديث ----------
 router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const id = Number(req.params.id);
@@ -241,7 +263,8 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   await db.run(`
     UPDATE patients SET first_name=@first_name, last_name=@last_name, phone=@phone, birth_date=@birth_date,
       gender=@gender, height_cm=@height_cm, start_weight=@start_weight, goal_weight=@goal_weight,
-      goal=@goal, notes=@notes, status=@status, updated_at=${NOW}
+      goal=@goal, notes=@notes, status=@status, activity_level=@activity_level,
+      reminders_opt_in=@reminders_opt_in, daily_reminder=@daily_reminder, updated_at=${NOW}
     WHERE id=@id
   `, { ...p, id });
   await audit({ userId: req.user.id, action: 'patient.update', entity: 'patients', entityId: id });

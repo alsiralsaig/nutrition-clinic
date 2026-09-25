@@ -15,7 +15,7 @@
     "build": "npm run build -w apps/web",
     "start": "npm run start -w apps/api",
     "seed": "npm run seed -w apps/api",
-    "test:api": "node apps/api/test/smoke.test.js",
+    "test:api": "node apps/api/test/smoke.test.js && node apps/api/test/features.test.js",
     "test:ui": "node apps/web/test/ui.test.mjs",
     "deploy:check": "node scripts/gen-vercel-bridges.mjs && node scripts/check-vercel-config.mjs",
     "deploy:bridges": "node scripts/gen-vercel-bridges.mjs",

@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 /** يرفع هذا الرقم عند أي تعديل على schema.sql كي تُطبَّق التعديلات على القواعد الموجودة */
-export const SCHEMA_VERSION = '2';
+export const SCHEMA_VERSION = '3';
 
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 export const DRIVER = DATABASE_URL ? 'postgres' : 'pglite';
@@ -222,6 +222,9 @@ export const DEFAULT_SETTINGS = [
   ['clinic.address', 'الخرطوم — السودان'],
   ['clinic.weekend', 'Friday'],
   ['clinic.workday', JSON.stringify({ from: '09:00', to: '20:00' })],
+  ['clinic.country_code', '249'],            // لتحويل أرقام الهواتف المحلية إلى صيغة واتساب الدولية
+  ['clinic.reminders_enabled', true],        // تذكير المواعيد التلقائي (المهمة اليومية)
+  ['clinic.daily_reminder_enabled', true],   // التذكير اليومي بالخطة للمرضى المشتركين
   ['clinic.printFooter', 'هذا التقرير صادر إلكترونياً من نظام إدارة العيادة ولا يُعتد به إلا معتمدًا من الإدارة.'],
 ];
 

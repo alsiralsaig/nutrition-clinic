@@ -100,6 +100,18 @@ export function todayISO(d = new Date()) {
   return dateFmt.format(d); // en-CA → YYYY-MM-DD
 }
 
+/** الساعة الحالية بتوقيت العيادة HH:MM (للتنبيهات: «موعد بعد ساعة») */
+let timeFmt;
+try { timeFmt = new Intl.DateTimeFormat('en-GB', { timeZone: CLINIC_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); }
+catch { timeFmt = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }); }
+export function nowTimeHM(d = new Date()) { return timeFmt.format(d); }
+/** تاريخ بعد/قبل n يوماً من اليوم (بتوقيت العيادة) */
+export function addDaysISO(iso, n) {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+
 /** تنظيف كائن: يترك المفاتيح المعلومة فقط */
 export function pick(obj, keys) {
   const out = {};

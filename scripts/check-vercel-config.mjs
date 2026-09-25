@@ -53,5 +53,13 @@ const sqliteLeft = srcFiles.filter((f) => /better-sqlite3|\.prepare\(|datetime\(
 if (sqliteLeft.length) fail.push('بقايا لهجة SQLite في: ' + sqliteLeft.join(', '));
 
 console.log(ok.map((x) => '  ✓ ' + x).join('\n'));
+// المهام المجدولة: خطة Hobby تسمح بمرة واحدة يومياً كحد أقصى لكل مهمة، وإلا يفشل النشر
+for (const c of v.crons || []) {
+  const parts = String(c.schedule || '').trim().split(/\s+/);
+  if (!String(c.path || '').startsWith('/api/')) fail.push(`cron ${c.path}: يجب أن يبدأ المسار بـ /api/`);
+  if (parts.length !== 5) fail.push(`cron ${c.path}: جدول غير صالح "${c.schedule}"`);
+  else if (!/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) fail.push(`cron ${c.path}: Hobby يسمح بمرة يومياً فقط — حدّد دقيقة وساعة ثابتتين (مثل "0 5 * * *")`);
+}
+if ((v.crons || []).length) console.log(`  ✓ ${(v.crons || []).length} مهمة مجدولة يومية (ضمن حد Hobby): ${(v.crons || []).map((c) => c.path + ' @ ' + c.schedule + ' UTC').join('، ')}`);
 if (fail.length) { console.error('\n' + fail.map((x) => '  ✗ ' + x).join('\n')); process.exit(1); }
 console.log('  ✓ إعداد Vercel متسق (' + Object.keys(v).join(', ') + ')');

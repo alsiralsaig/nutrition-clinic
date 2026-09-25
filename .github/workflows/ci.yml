@@ -43,13 +43,15 @@ jobs:
       - name: فحص إعداد Vercel (جسور /api + لا بقايا SQLite)
         run: npm run deploy:check
 
-      - name: API smoke tests — Postgres مدمج (PGlite)
+      - name: API smoke + features (المولّد، واتساب، الالتزام، CSV) — PGlite
         run: npm run test:api
 
-      - name: API smoke tests — PostgreSQL 17 حقيقي (مسار Neon)
+      - name: API smoke + features — PostgreSQL 17 حقيقي (مسار Neon)
         run: |
           psql "$PG_ADMIN/clinic_ci" -c "CREATE DATABASE clinic_smoke"
-          DATABASE_URL="$PG_ADMIN/clinic_smoke" SEED_DEMO=1 npm run test:api
+          psql "$PG_ADMIN/clinic_ci" -c "CREATE DATABASE clinic_feat"
+          DATABASE_URL="$PG_ADMIN/clinic_smoke" SEED_DEMO=1 node apps/api/test/smoke.test.js
+          DATABASE_URL="$PG_ADMIN/clinic_feat" node apps/api/test/features.test.js
 
       - name: محاكاة Vercel — الوضع التجريبي + وضع Neon (البيانات تنجو من حاوية جديدة)
         run: |

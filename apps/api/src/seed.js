@@ -107,6 +107,7 @@ export async function ensureSeed({ quiet = false, forceDemo = false } = {}) {
 
 async function seedDemoPatients(log) {
   const r = rng(7);
+  const ra = rng(99); // مولّد منفصل للالتزام والنشاط كي لا يتغير باقي البيانات التجريبية
   const pick = (arr) => arr[Math.floor(r() * arr.length)];
   const adminId = (await db.get(`SELECT id FROM users WHERE username='admin'`)).id;
   const firstFree = (await db.get(`SELECT COALESCE(MAX(NULLIF(regexp_replace(file_no, '\\D', '', 'g'), '')::int), 0) AS n FROM patients`)).n;
@@ -117,7 +118,7 @@ async function seedDemoPatients(log) {
     VALUES (@file_no, @first_name, @last_name, @phone, @birth_date, @gender, @height_cm,
       @start_weight, @goal_weight, @goal, @notes, @status, @created_at, @created_by)
   `);
-  const insVisit = `INSERT INTO visits (patient_id, visit_date, visit_type, reason, created_by, created_at) VALUES (?,?,?,?,?,?)`;
+  const insVisit = `INSERT INTO visits (patient_id, visit_date, visit_type, reason, created_by, created_at, adherence) VALUES (?,?,?,?,?,?,?)`;
   const insMeas = (`
     INSERT INTO measurements (patient_id, visit_id, measured_on, weight_kg, height_cm, bmi, waist_cm, chest_cm, hip_cm, body_fat_pct, notes, created_by)
     VALUES (@patient_id, @visit_id, @measured_on, @weight_kg, @height_cm, @bmi, @waist_cm, @chest_cm, @hip_cm, @body_fat_pct, @notes, @created_by)
@@ -173,6 +174,11 @@ async function seedDemoPatients(log) {
         created_by: adminId,
       });
 
+      // مستوى النشاط والتذكير اليومي + متوسط التزام خاص بكل مريض
+      const patientAdh = 45 + ra() * 50;
+      await db.run(`UPDATE patients SET activity_level=?, daily_reminder=? WHERE id=?`,
+        ['sedentary', 'light', 'light', 'moderate', 'active'][Math.floor(ra() * 5)], ra() > 0.6 ? 1 : 0, pid);
+
       // سلسلة زيارات ومتابعة عبر الأسابيع
       const visits = Math.round(3 + r() * 6);
       let w = start;
@@ -180,13 +186,23 @@ async function seedDemoPatients(log) {
       const hip = Math.round(waist + (gender === 'female' ? 18 : 6) + r() * 6);
       const chest = Math.round(waist + 12 + r() * 14);
       let fat = Math.round((losing ? 30 : 24) + r() * 10);
+      let cursor = createdAt.getTime();
       for (let v = 0; v < visits; v++) {
-        const when = new Date(createdAt.getTime() + v * (7 + Math.round(r() * 10)) * 864e5);
+        // تاريخ تراكمي: كل زيارة بعد السابقة بـ 7–17 يوماً (كان يُضرب في v فتتبعثر الترتيبات)
+        const gap = 7 + Math.round(r() * 10);
+        if (v > 0) cursor += gap * 864e5;
+        const when = new Date(cursor);
         if (when > new Date()) break;
         const visitType = v === 0 ? 'initial' : (r() > 0.7 ? 'plan_update' : 'followup');
+        // الالتزام (من الزيارة الثانية): مرتبط بالنتيجة — التزام أعلى = نزول أكبر غالباً
+        const adherence = v === 0 ? null : Math.round(Math.min(100, Math.max(20, patientAdh + (ra() - 0.5) * 40)) / 5) * 5;
         const vid = await db.insert(insVisit, pid, iso(when), visitType, v === 0 ? 'تقييم شامل وتخطيط برنامج' : 'متابعة الوزن والقياسات', adminId,
-          `${iso(when)} 10:00:00`);
-        if (v > 0) w = Math.round((w + (losing ? -(0.3 + r() * 1.6) : (0.15 + r() * 0.8))) * 10) / 10;
+          `${iso(when)} 10:00:00`, adherence);
+        if (v > 0) {
+          const step = losing ? -(0.3 + r() * 1.6) : (0.15 + r() * 0.8);
+          const effect = 0.15 + (adherence / 100) ** 1.5 * 1.3; // الالتزام يضاعف أثر الخطة (نزولاً أو زيادة)
+          w = Math.round((w + step * effect) * 10) / 10;
+        }
         waist = Math.max(60, Math.round(waist + (losing ? -(0.4 + r() * 1.3) : (0.2 + r() * 0.5))));
         fat = Math.max(8, Math.round(fat + (losing ? -(0.3 + r() * 0.9) : (0.15 + r() * 0.4))));
         await db.run(insMeas, {
