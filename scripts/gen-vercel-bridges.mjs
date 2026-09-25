@@ -17,10 +17,13 @@ export function prefixes() {
     const first = p.replace(/^\/+/, '').split('/')[1]; // /api/<this>/...
     if (first && !first.startsWith('{')) set.add(first);
   }
-  // ملف التوثيق يُقدَّم أيضاً تحت /api حتى يعمل على Vercel (لا مسار جذر هناك)
-  set.add('openapi.json');
+  // ملف التوثيق يُقدَّم تحت /api/openapi.json (ملف واحد بامتداد مركّب، لا مجلد بنقطة)
+  set.delete('openapi.json');
   return [...set].sort();
 }
+
+// /api/openapi.json -> api/openapi.json.js (مقطع واحد، فلا يحتاج مجلداً)
+export const SINGLE_FILES = ['openapi.json.js'];
 
 const BRIDGE = (depth, comment) =>
   `// مُولَّد بواسطة scripts/gen-vercel-bridges.mjs — لا تحرّره يدوياً.\n` +
@@ -34,6 +37,7 @@ export function generate({ write = true } = {}) {
     wanted.push([`api/${p}/index.js`, BRIDGE(2, `// يخدم /api/${p} تماماً\n`)]);
     wanted.push([`api/${p}/[...path].js`, BRIDGE(2, `// يخدم /api/${p}/* بكل أعماقه\n`)]);
   }
+  for (const f of SINGLE_FILES) wanted.push([`api/${f}`, BRIDGE(1, '// يخدم /api/openapi.json (مقطع واحد)\n')]);
   if (write) {
     // نظّف أي جسر قديم بصيغة مدموجة لا يدعمها Vercel
     for (const f of fs.readdirSync(API_DIR)) {
@@ -42,6 +46,7 @@ export function generate({ write = true } = {}) {
     const keep = new Set(list);
     for (const d of fs.readdirSync(API_DIR, { withFileTypes: true })) {
       if (d.isDirectory() && !keep.has(d.name)) fs.rmSync(path.join(API_DIR, d.name), { recursive: true, force: true });
+      if (d.isFile() && d.name.includes('.') && !SINGLE_FILES.includes(d.name)) fs.rmSync(path.join(API_DIR, d.name), { force: true });
     }
     for (const [rel, body] of wanted) {
       const abs = path.join(ROOT, rel);

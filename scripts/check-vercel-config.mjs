@@ -27,14 +27,16 @@ for (const f of fs.existsSync('api') ? fs.readdirSync('api') : []) {
   if (f.includes('[[')) fail.push(`صيغة غير مدعومة على Vercel: api/${f} — استعمل مجلداً لكل بادئة`);
 }
 const list = prefixes();
+const { SINGLE_FILES } = await import('./gen-vercel-bridges.mjs');
 const missing = [];
 for (const p of list) {
   for (const f of ['index.js', '[...path].js']) {
     if (!fs.existsSync(path.join('api', p, f))) missing.push(`api/${p}/${f}`);
   }
 }
+for (const f of SINGLE_FILES) if (!fs.existsSync(path.join('api', f))) missing.push(`api/${f}`);
 if (missing.length) fail.push(`جسور مفقودة (${missing.length}): ${missing.slice(0, 6).join(', ')}${missing.length > 6 ? ' …' : ''}\n    أعد التوليد: node scripts/gen-vercel-bridges.mjs`);
-else ok.push(`${list.length} بادئة API × 2 ملف جسر = ${list.length * 2} دالة، كلها موجودة ✓`);
+else ok.push(`${list.length} بادئة API (${list.length * 2 + SINGLE_FILES.length} دالة جسر) مغطاة بالكامل ✓`);
 
 // يجب أن يصدّر server.js دالة قابلة للاستعمال كـ handler
 const srv = fs.readFileSync('apps/api/src/server.js', 'utf8');
