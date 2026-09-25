@@ -4,7 +4,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import cors from 'cors';
-import { migrate, db } from './db.js';
+import { migrate, db, DB_PATH, EPHEMERAL } from './db.js';
 import { authRequired } from './auth.js';
 import { HttpError } from './lib.js';
 
@@ -47,11 +47,17 @@ app.use('/api/auth/login', (req, res, next) => {
 
 // ---------- مسارات عامة ----------
 app.get('/api/health', (req, res) => {
-  res.json({ ok: true, time: new Date().toISOString(), counts: {
-    patients: db.prepare(`SELECT COUNT(*) n FROM patients`).get().n,
-    appointments: db.prepare(`SELECT COUNT(*) n FROM appointments`).get().n,
-    payments: db.prepare(`SELECT COUNT(*) n FROM payments`).get().n,
-  } });
+  res.json({
+    ok: true,
+    time: new Date().toISOString(),
+    mode: EPHEMERAL ? 'demo-ephemeral' : 'persistent',
+    db_path: DB_PATH,
+    counts: {
+      patients: db.prepare(`SELECT COUNT(*) n FROM patients`).get().n,
+      appointments: db.prepare(`SELECT COUNT(*) n FROM appointments`).get().n,
+      payments: db.prepare(`SELECT COUNT(*) n FROM payments`).get().n,
+    },
+  });
 });
 app.use('/api/auth', authRoutes);
 
@@ -103,7 +109,7 @@ app.use((err, req, res, next) => {
 // احتياط: قاعدة البيانات تُغلق بأمان
 process.on('SIGINT', () => { try { db.close(); } catch {} process.exit(0); });
 
-if (process.env.NODE_ENV !== 'test') {
+if (process.env.NODE_ENV !== 'test' && !process.env.VERCEL) {
   app.listen(PORT, HOST, () => {
     console.log(`\n  🥗 Nutrition Clinic API  →  http://localhost:${PORT}`);
     console.log(`     قاعدة البيانات: ${db.name}`);

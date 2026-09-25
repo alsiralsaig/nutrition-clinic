@@ -57,12 +57,14 @@ export function Layout({ children }) {
   const [clinic, setClinic] = useState('عيادة التغذية');
   const [open, setOpen] = useState(false);
   const [todayCount, setTodayCount] = useState(null);
+  const [demoMode, setDemoMode] = useState(false);
   const nav = useNavigate();
   const loc = useLocation();
 
   useEffect(() => {
     api.get('/settings').then((r) => setClinic(r.settings?.['clinic.name'] || 'عيادة التغذية')).catch(() => {});
     api.get(`/appointments/today?date=${todayISO()}`).then((r) => setTodayCount(r.total)).catch(() => {});
+    api.get('/health').then((r) => setDemoMode(r.mode === 'demo-ephemeral')).catch(() => {});
   }, [loc.pathname]);
 
   useEffect(() => setOpen(false), [loc.pathname]);
@@ -125,6 +127,13 @@ export function Layout({ children }) {
             <QuickSearch />
           </div>
         </header>
+        {demoMode && (
+          <div className="no-print flex flex-wrap items-center justify-center gap-2 border-b border-sun-500/30 bg-sun-50 px-5 py-2 text-center text-[12px] font-bold text-sun-600">
+            <Icon.alert />
+            وضع تجريبي على Vercel: القرص مؤقت، البيانات المحفوظة هنا تُمسح عند إعادة تشغيل الحاوية وتُزرع بيانات العرض من جديد.
+            <span className="opacity-70">للعمل الحقيقي: انشر على خادم بقرص دائم أو ارحّل إلى Vercel Postgres (README §6).</span>
+          </div>
+        )}
         <main className="flex-1 px-3 py-4 sm:px-5 sm:py-6">
           <div className="mx-auto w-full max-w-[1420px] fade-in">{children}</div>
         </main>

@@ -5,15 +5,26 @@ import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DATA_DIR = process.env.CLINIC_DATA_DIR || path.join(__dirname, '..', '.data');
+
+/**
+ * وضع المنصة:
+ *  - خادم العادي (الخيار الافتراضي): ملف SQLite على قرص دائم → البيانات محفوظة.
+ *  - Vercel / serverless: لا قرص دائم؛ نكتب في /tmp وتُمسح البيانات عند إعدام الحاوية،
+ *    لذلك يُبذر النظام نفسه تلقائياً وتظهر لافتة «وضع تجريبي» في الواجهة.
+ */
+export const EPHEMERAL = !!process.env.VERCEL && !process.env.CLINIC_DB_PATH;
+
+const DATA_DIR = process.env.CLINIC_DATA_DIR || (EPHEMERAL ? '/tmp/clinic' : path.join(__dirname, '..', '.data'));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 const DB_PATH = process.env.CLINIC_DB_PATH || path.join(DATA_DIR, 'clinic.sqlite');
 
 export const db = new Database(DB_PATH);
-db.pragma('journal_mode = WAL');
+// WAL أسرع على قرص دائم؛ لكن على وسيط مؤقت قد تفشل ملفات -shm/-wal، فنكتفي بـ DELETE
+db.pragma(EPHEMERAL ? 'journal_mode = DELETE' : 'journal_mode = WAL');
 db.pragma('foreign_keys = ON');
+db.pragma('busy_timeout = 5000');
 
 export function migrate() {
   db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));

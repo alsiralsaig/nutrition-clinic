@@ -16,13 +16,14 @@
     "start": "npm run start -w apps/api",
     "seed": "npm run seed -w apps/api",
     "test:api": "node apps/api/test/smoke.test.js",
-    "test:ui": "node apps/web/test/ui.test.mjs"
+    "test:ui": "node apps/web/test/ui.test.mjs",
+    "deploy:check": "node scripts/check-vercel-config.mjs"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
     "jsdom": "^25.0.1"
   },
   "engines": {
-    "node": ">=18.18"
+    "node": "20.x"
   }
 }

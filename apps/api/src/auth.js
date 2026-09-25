@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { db, audit } from './db.js';
+import { db, audit, EPHEMERAL } from './db.js';
 import { forbidden, HttpError } from './lib.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -13,12 +13,19 @@ const SECRET_FILE = path.join(__dirname, '..', '.jwt-secret');
 
 function loadSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  // على منصة serverless: القرص للقراءة فقط، ولا بد أن تتفق كل الحاويات على نفس المفتاح
+  // وإلا رفضت كل الطلبات بعد أول تسجيل دخول. لذلك مفتاح ثابت معلن للوضع التجريبي.
+  if (EPHEMERAL) {
+    console.warn('[auth] وضع تجريبي: استعمل JWT_SECRET ثابتاً في متغيرات البيئة على Vercel');
+    return 'vercel-demo-secret-not-for-production';
+  }
   try {
     const saved = fs.readFileSync(SECRET_FILE, 'utf8').trim();
     if (saved) return saved;
   } catch { /* لا يوجد ملف بعد */ }
   const generated = randomBytes(48).toString('hex');
-  fs.writeFileSync(SECRET_FILE, generated, { mode: 0o600 });
+  try { fs.writeFileSync(SECRET_FILE, generated, { mode: 0o600 }); }
+  catch { console.warn('[auth] تعذّر حفظ مفتاح الجلسة على القرص — سيُستخدم مؤقتاً فقط لهذه الحاوية'); }
   return generated;
 }
 
