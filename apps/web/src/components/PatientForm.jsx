@@ -9,7 +9,10 @@ const EMPTY = {
   first_name: '', last_name: '', phone: '', birth_date: '', gender: 'female',
   height_cm: '', start_weight: '', goal_weight: '', goal: '', notes: '', status: 'active',
   activity_level: 'light', reminders_opt_in: true, daily_reminder: false,
+  chronic_conditions: '', allergies: '', medications: '', forbidden_foods: '', blood_type: '',
 };
+// i18n-ignore
+const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 
 /** BMI محسوب للمعاينة فقط — القيمة المعتمدة تُحسب في الخادم */
 const previewBmi = (w, h) => (!w || !h ? null : Math.round((w / (h / 100) ** 2) * 10) / 10);
@@ -127,12 +130,26 @@ export default function PatientForm({ open, onClose, patient, onSaved }) {
           </div>
         </div>
 
+        <fieldset className="grid gap-3 rounded-xl border border-clay-100 bg-clay-50/40 p-3 sm:grid-cols-2" data-medical-form>
+          <legend className="px-1 text-[12.5px] font-extrabold text-clay-600">التاريخ الطبي</legend>
+          <Field label="الأمراض المزمنة" hint="افصل بينها بفاصلة"><Input value={form.chronic_conditions} onChange={set('chronic_conditions')} placeholder="سكري نوع 2، ضغط، قولون عصبي" /></Field>
+          <Field label="الحساسية الغذائية" hint="تظهر كتنبيه أحمر في الملف والبرنامج"><Input value={form.allergies} onChange={set('allergies')} placeholder="لاكتوز، فول سوداني، جمبري" /></Field>
+          <Field label="الأطعمة الممنوعة / غير المرغوبة"><Input value={form.forbidden_foods} onChange={set('forbidden_foods')} placeholder="سكر أبيض، مقليات" /></Field>
+          <Field label="الأدوية الحالية"><Input value={form.medications} onChange={set('medications')} placeholder="ميتفورمين 500 ملغ" /></Field>
+          <Field label="فصيلة الدم">
+            <Select value={form.blood_type} onChange={set('blood_type')}>
+              <option value="">غير معروفة</option>
+              {BLOOD_TYPES.map((b) => <option key={b} value={b}>{b}</option>)}
+            </Select>
+          </Field>
+        </fieldset>
+
         <div>
           <div className="mb-1.5 flex items-center justify-between gap-2">
             <span className="label !mb-0">ملاحظات سريرية</span>
             <VoiceNoteButton onText={(t) => setForm((f) => ({ ...f, notes: appendText(f.notes, t) }))} />
           </div>
-          <Textarea value={form.notes} onChange={set('notes')} placeholder="حساسية، أمراض مزمنة، أدوية، تفضيلات الأكل…" />
+          <Textarea value={form.notes} onChange={set('notes')} placeholder="تفضيلات الأكل، ظروف العمل، ملاحظات الأخصائي…" />
         </div>
 
         {/* مؤشرات محسوبة — للعرض فقط ولا تُرسل للحفظ */}

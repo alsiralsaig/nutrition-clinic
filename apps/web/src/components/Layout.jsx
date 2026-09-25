@@ -5,6 +5,7 @@ import { api } from '../api.js';
 import { Icon } from './ui.jsx';
 import { ROLES, todayISO } from '../format.js';
 import { NotificationBell } from './Smart.jsx';
+import { LockButton, ScreenLock } from './ScreenLock.jsx';
 import { ThemeToggle } from '../theme.jsx';
 import { TIME_LOCALE, currentLang, setLang } from '../i18n.js';
 
@@ -137,10 +138,12 @@ export function Layout({ children }) {
             <Clock />
             <QuickSearch />
             <NotificationBell />
+            <LockButton />
             <ThemeToggle />
             <LangToggle />
           </div>
         </header>
+        <ScreenLock />
         {demoMode && (
           <div className="no-print flex flex-wrap items-center justify-center gap-2 border-b border-sun-500/30 bg-sun-50 px-5 py-2 text-center text-[12px] font-bold text-sun-600">
             <Icon.alert />
@@ -159,7 +162,7 @@ export function Layout({ children }) {
           <div className="mx-auto w-full max-w-[1420px] fade-in">{children}</div>
         </main>
         <footer className="no-print border-t border-line px-5 py-3 text-center text-[11.5px] font-bold text-ink/40">
-          نظام إدارة عيادة التغذية · {engine === 'postgres' ? 'البيانات محفوظة في قاعدة PostgreSQL سحابية' : demoMode ? 'وضع تجريبي — البيانات لا تُحفظ' : 'البيانات محفوظة في قاعدة PostgreSQL على هذا الجهاز'} · إصدار 2.0
+          نظام إدارة عيادة التغذية · {engine === 'postgres' ? 'البيانات محفوظة في قاعدة PostgreSQL سحابية' : demoMode ? 'وضع تجريبي — البيانات لا تُحفظ' : 'البيانات محفوظة في قاعدة PostgreSQL على هذا الجهاز'} · إصدار 2.3
         </footer>
       </div>
     </div>

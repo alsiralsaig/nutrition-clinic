@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { useApp, useLoader } from '../app-context.jsx';
 import { api, readBackupFile, saveBackupJson } from '../api.js';
 import { PortalSettingsCard } from '../components/Care.jsx';
+import { PinSetup } from '../components/ScreenLock.jsx';
 import { Badge, Card, Confirm, Field, Icon, Input, Modal, Select, Spinner, Table, Textarea, Toggle } from '../components/ui.jsx';
 import { ROLES, dateTime } from '../format.js';
 import { WaIcon } from '../components/Smart.jsx';
@@ -14,6 +15,7 @@ export default function Settings() {
   const isAdmin = user?.role === 'admin';
   // القدوم من لافتة «كلمة المرور الافتراضية» يفتح نافذة تغييرها مباشرة
   const wantsPw = !!useLocation().state?.changePassword;
+  const [pinOpen, setPinOpen] = useState(false);
   const [tab, setTab] = useState(wantsPw ? 'security' : 'clinic');
   const [restoring, setRestoring] = useState(null);
   const [pwOpen, setPwOpen] = useState(wantsPw ? { self: true } : false);
@@ -99,6 +101,8 @@ export default function Settings() {
               ))}
             </ul>
             <button className="btn-ghost mt-3 w-full" onClick={() => setPwOpen({ self: true })}><Icon.shield /> تغيير كلمتي السرية</button>
+            <button className="btn-ghost mt-2 w-full" onClick={() => setPinOpen(true)} data-pin-settings>🔒 رمز قفل الشاشة والقفل التلقائي</button>
+            <PinSetup open={pinOpen} onClose={() => setPinOpen(false)} />
           </Card>
         </div>
       )}

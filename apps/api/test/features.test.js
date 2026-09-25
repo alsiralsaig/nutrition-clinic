@@ -261,6 +261,19 @@ try {
   check('تشغيل يدوي للمهمة من الإعدادات (مدير)', manualRun.status === 200 && manualRun.json?.source === 'manual');
   const bk = await req('GET', '/api/backup', { token: tk });
   check('النسخة الاحتياطية تشمل سجل الرسائل', Array.isArray(bk.json?.tables?.message_log) && bk.json.tables.message_log.length >= 3);
+
+  // ---------- المرحلة E: التاريخ الطبي المنظّم ----------
+  const med = await req('POST', '/api/patients', { token: tk, body: {
+    first_name: 'تاريخ', last_name: 'طبي', allergies: 'لاكتوز، فول سوداني', chronic_conditions: 'سكري نوع 2',
+    medications: 'ميتفورمين', forbidden_foods: 'مقليات', blood_type: 'o+' } });
+  check('إنشاء مريض بالتاريخ الطبي', med.status === 201 && med.json?.allergies === 'لاكتوز، فول سوداني' && med.json?.chronic_conditions === 'سكري نوع 2' && med.json?.medications === 'ميتفورمين' && med.json?.forbidden_foods === 'مقليات', JSON.stringify(med.json));
+  check('فصيلة الدم تُوحَّد بأحرف كبيرة', med.json?.blood_type === 'O+', med.json?.blood_type);
+  const medBad = await req('PUT', `/api/patients/${med.json.id}`, { token: tk, body: { blood_type: 'Z9' } });
+  check('فصيلة دم غير صالحة تُحفظ فارغة', medBad.status === 200 && medBad.json?.blood_type === null, JSON.stringify(medBad.json?.blood_type));
+  const medPart = await req('PUT', `/api/patients/${med.json.id}`, { token: tk, body: { notes: 'تحديث جزئي' } });
+  check('التحديث الجزئي لا يمسح الحساسية', medPart.json?.allergies === 'لاكتوز، فول سوداني' && medPart.json?.notes === 'تحديث جزئي');
+  const medFile = await req('GET', `/api/patients/${med.json.id}/profile`, { token: tk });
+  check('الملف الشامل يعرض التاريخ الطبي', (medFile.json?.patient?.allergies || medFile.json?.allergies) === 'لاكتوز، فول سوداني', `status ${medFile.status}`);
 } catch (e) {
   failures++;
   console.error('EXCEPTION', e, serverLog.slice(-800));

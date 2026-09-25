@@ -117,7 +117,7 @@ export default function PatientFile() {
             </div>
           </div>
           <div className="flex flex-wrap gap-1.5">
-            {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('patient'); }}><Icon.pencil /> تعديل</button>}
+            {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(p); setModal('patient'); }}><Icon.pencil /> تعديل</button>}
             {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('measurement'); }}><Icon.scale /> قياسات جديدة</button>}
             {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('appointment'); }}><Icon.cal /> موعد</button>}
             {canWrite && <button className="btn-ghost btn-sm" onClick={() => { setEditing(null); setModal('payment'); }}><Icon.wallet /> دفعة</button>}
@@ -125,6 +125,8 @@ export default function PatientFile() {
             <button className="btn-soft btn-sm" onClick={() => openDoc('report')}><Icon.print /> تقرير المريض</button>
           </div>
         </div>
+
+        <MedicalStrip p={p} />
 
         {/* مؤشرات سريعة */}
         <div className="mt-4 grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
@@ -253,6 +255,11 @@ export default function PatientFile() {
             <Row label="BMI البداية" value={p.start_bmi ? `${fmt(p.start_bmi)} · ${p.start_bmi_category}` : '—'} mono />
             <Row label="الوزن المثالي تقديري" value={p.ideal_weight ? `${fmt(p.ideal_weight)} كغ` : '—'} mono />
             <Row label="مستوى النشاط" value={ACTIVITY_LEVELS[p.activity_level] || '—'} />
+            <Row label="فصيلة الدم" value={p.blood_type ? <span dir="ltr" className="tnum">{p.blood_type}</span> : '—'} />
+            <Row label="الأمراض المزمنة" value={p.chronic_conditions || '—'} />
+            <Row label="الحساسية الغذائية" value={p.allergies ? <span className="text-clay-600">{p.allergies}</span> : '—'} />
+            <Row label="الأطعمة الممنوعة" value={p.forbidden_foods || '—'} />
+            <Row label="الأدوية الحالية" value={p.medications || '—'} />
             <Row label="تذكيرات واتساب" value={`${p.reminders_opt_in === false || p.reminders_opt_in === 0 ? 'المواعيد: لا' : 'المواعيد: نعم'} · ${p.daily_reminder ? 'يومي: نعم' : 'يومي: لا'}`} />
             <Row label="تاريخ التسجيل" value={shortDate(p.created_at?.slice(0, 10))} />
             <Row label="آخر تحديث" value={shortDate(p.updated_at?.slice(0, 10))} />
@@ -563,3 +570,23 @@ function PlanView({ plan }) {
   );
 }
 
+/** شريط التنبيهات الطبية أعلى الملف — الحساسية بالأحمر حتى لا تُنسى عند كتابة البرنامج */
+function MedicalStrip({ p }) {
+  const chips = [
+    p.allergies && { k: 'allergies', icon: '⚠', label: 'حساسية', v: p.allergies, cls: 'border-clay-100 bg-clay-50 text-clay-600' },
+    p.forbidden_foods && { k: 'forbidden', icon: '🚫', label: 'ممنوع', v: p.forbidden_foods, cls: 'border-clay-100 bg-clay-50 text-clay-600' },
+    p.chronic_conditions && { k: 'chronic', icon: '🩺', label: 'أمراض مزمنة', v: p.chronic_conditions, cls: 'border-sun-100 bg-sun-50 text-sun-600' },
+    p.medications && { k: 'meds', icon: '💊', label: 'أدوية', v: p.medications, cls: 'border-brand-100 bg-brand-50 text-brand-700' },
+    p.blood_type && { k: 'blood', icon: '🩸', label: 'فصيلة الدم', v: p.blood_type, cls: 'border-line bg-sand text-ink/70' },
+  ].filter(Boolean);
+  if (!chips.length) return null;
+  return (
+    <div className="mt-3 flex flex-wrap gap-1.5" data-medical-strip>
+      {chips.map((c) => (
+        <span key={c.k} data-medical={c.k} className={`inline-flex max-w-full items-center gap-1 rounded-lg border px-2.5 py-1 text-[12px] font-bold ${c.cls}`}>
+          <span aria-hidden>{c.icon}</span><span className="opacity-75">{c.label}:</span> <span className="truncate">{c.v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}

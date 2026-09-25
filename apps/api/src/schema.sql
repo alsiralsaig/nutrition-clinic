@@ -337,3 +337,10 @@ SELECT p.id AS patient_id,
 FROM patients p
 LEFT JOIN payments pa ON pa.patient_id = p.id
 GROUP BY p.id;
+
+-- المرحلة E: التاريخ الطبي المنظّم (مستوحى من نسخة AI Studio)
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS chronic_conditions TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS allergies          TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS medications        TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS forbidden_foods    TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS blood_type         TEXT;

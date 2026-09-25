@@ -79,6 +79,8 @@ export function PatientReportDoc({ report }) {
         ]} />
         {p.goal && <p className="mt-2 text-[12px]"><b>الهدف الغذائي: </b>{p.goal}</p>}
         {p.notes && <p className="mt-1 text-[12px]"><b>ملاحظات: </b>{p.notes}</p>}
+        {(p.allergies || p.forbidden_foods) && <p className="mt-1 text-[12px]" style={{ color: '#b42318' }}><b>⚠ حساسية / ممنوعات: </b>{[p.allergies, p.forbidden_foods].filter(Boolean).join(' · ')}</p>}
+        {(p.chronic_conditions || p.medications || p.blood_type) && <p className="mt-1 text-[12px]"><b>التاريخ الطبي: </b>{[p.chronic_conditions, p.medications && `أدوية: ${p.medications}`, p.blood_type && `فصيلة الدم ${p.blood_type}`].filter(Boolean).join(' · ')}</p>}
       </DocSection>
 
       <DocSection title="ثانياً: تطور القياسات">

@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 /** يرفع هذا الرقم عند أي تعديل على schema.sql كي تُطبَّق التعديلات على القواعد الموجودة */
-export const SCHEMA_VERSION = '4';
+export const SCHEMA_VERSION = '5';
 
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 export const DRIVER = DATABASE_URL ? 'postgres' : 'pglite';

@@ -4,6 +4,8 @@ import { useApp } from '../app-context.jsx';
 import { Field, Icon, Input, Modal, Select, Textarea } from './ui.jsx';
 import { MEAL_SLOTS, PAY_METHODS, VISIT_TYPES, fmt, todayISO } from '../format.js';
 import { AdherencePicker, DAYS, VoiceNoteButton, appendText, todayDow } from './Smart.jsx';
+import { DIET_TEMPLATES, MEAL_TEMPLATES } from '../templates.js';
+import { currentLang } from '../i18n.js';
 
 const toNumOrNull = (v) => (v === '' || v === null || v === undefined ? null : Number(v));
 const previewBmi = (w, h) => (!w || !h ? null : Math.round((w / (h / 100) ** 2) * 10) / 10);
@@ -300,6 +302,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
   const [meals, setMeals] = useState([]);
   const [foods, setFoods] = useState([]);
   const [dayView, setDayView] = useState('all'); // all | every | 0..6
+  const [undo, setUndo] = useState(null); // لقطة قبل تطبيق قالب كامل
 
   useEffect(() => {
     if (!open) return;
@@ -320,6 +323,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
       }))
       : MEAL_SLOTS.slice(0, 5).map(emptyMeal));
     setFoods([]);
+    setUndo(null);
     setDayView(plan?.meals?.some((m) => m.day_of_week !== null && m.day_of_week !== undefined) ? String(todayDow()) : 'all');
   }, [open, plan]);
 
@@ -358,6 +362,30 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
     } : m)));
     toast(`أُضيف ${f.name} للوجبة`, 'good', 1800);
   };
+
+  // ---- قوالب جاهزة (من نسخة AI Studio) + تنبيه الحساسية ----
+  const risky = useMemo(() => allergyTerms(patient), [patient]);
+  const conflictsOf = (m) => risky.filter((t) => `${m.title || ''} ${m.items || ''}`.includes(t));
+  const conflicts = [...new Set(meals.flatMap(conflictsOf))];
+  const toRow = (t, i) => ({
+    ...emptyMeal(t.slot, i), slot_time: t.slot_time, title: t.title, items: t.items, portions: t.portions,
+    kcal: t.kcal, protein_g: t.protein_g, carbs_g: t.carbs_g, fat_g: t.fat_g,
+  });
+  const applyDiet = (d) => {
+    setUndo({ meta, meals, dayView });
+    setMeta((mt) => ({
+      ...mt, title: tName(d), target_kcal: d.target_kcal, target_protein_g: d.target_protein_g,
+      target_carbs_g: d.target_carbs_g, target_fat_g: d.target_fat_g, advice: d.advice,
+    }));
+    setMeals(d.meals.map(toRow));
+    setDayView('all');
+    toast(`طُبّق قالب «${tName(d)}» — عدّل ما تريد ثم احفظ`, 'good', 2600);
+  };
+  const addMealTemplate = (t) => {
+    setMeals((ms) => [...ms, { ...toRow(t, ms.length), day_of_week: /^\d$/.test(dayView) ? dayView : '' }]);
+    toast(`أُضيفت وجبة «${tName(t)}»`, 'good', 1800);
+  };
+  const undoTemplate = () => { if (!undo) return; setMeta(undo.meta); setMeals(undo.meals); setDayView(undo.dayView); setUndo(null); };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -403,6 +431,54 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
           <Field label="يبدأ"><Input type="date" value={meta.start_date} onChange={(e) => setMeta({ ...meta, start_date: e.target.value })} /></Field>
           <Field label="ينتهي"><Input type="date" value={meta.end_date} onChange={(e) => setMeta({ ...meta, end_date: e.target.value })} /></Field>
         </div>
+
+        {(risky.length > 0) && (
+          <div data-allergy-alert={conflicts.length ? 'conflict' : 'info'}
+            className={`flex flex-wrap items-center gap-2 rounded-xl border px-3 py-2 text-[12.5px] font-bold ${conflicts.length ? 'border-clay-100 bg-clay-50 text-clay-600' : 'border-sun-100 bg-sun-50 text-sun-600'}`}>
+            <span>⚠</span>
+            {conflicts.length
+              ? <span>{`تنبيه: البرنامج يحتوي أصنافاً ممنوعة على المريض: ${conflicts.join('، ')}`}</span>
+              : <span>{`حساسية / ممنوعات المريض: ${risky.join('، ')}`}</span>}
+          </div>
+        )}
+
+        <details className="rounded-xl border border-brand-200 bg-brand-50/60 p-3" data-templates>
+          <summary className="cursor-pointer text-[13px] font-extrabold text-brand-700">📋 قوالب جاهزة — برنامج كامل أو وجبة بضغطة</summary>
+          <div className="mt-3 grid gap-3">
+            <div>
+              <div className="mb-1.5 flex items-center gap-2 text-[12px] font-extrabold text-ink/55">
+                برامج كاملة (تستبدل الوجبات الحالية)
+                {undo && <button type="button" className="btn-ghost btn-sm" onClick={undoTemplate} data-undo-template>↶ تراجع</button>}
+              </div>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {DIET_TEMPLATES.map((d) => (
+                  <button type="button" key={d.id} data-diet-template={d.id} onClick={() => applyDiet(d)}
+                    className="rounded-xl border border-line bg-surface p-2.5 text-start shadow-card transition hover:border-brand-300 hover:bg-brand-50">
+                    <div className="text-[12.5px] font-extrabold leading-5">{tName(d)}</div>
+                    <div className="tnum mt-1 text-[11px] font-bold text-ink/50">
+                      {`${d.meals.length} وجبات · ب ${fmt(d.target_protein_g, 0)} · ك ${fmt(d.target_carbs_g, 0)} · د ${fmt(d.target_fat_g, 0)} غ`}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div>
+              <div className="mb-1.5 text-[12px] font-extrabold text-ink/55">وجبات جاهزة (تُضاف إلى البرنامج)</div>
+              <div className="flex flex-wrap gap-1.5">
+                {MEAL_TEMPLATES.map((t) => {
+                  const bad = conflictsOf(t).length > 0;
+                  return (
+                    <button type="button" key={t.id} data-meal-template={t.id} onClick={() => addMealTemplate(t)}
+                      title={bad ? `يحتوي: ${conflictsOf(t).join('، ')}` : t.portions}
+                      className={`rounded-lg border px-2.5 py-1 text-[11.5px] font-bold transition ${bad ? 'border-clay-100 bg-clay-50 text-clay-600' : 'border-line bg-surface hover:border-brand-300 hover:bg-brand-50'}`}>
+                      {bad && '⚠ '}<span className="text-ink/45">{__t(t.slot)} ·</span> {tName(t)} <span className="tnum text-ink/45">{t.kcal}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </details>
 
         <div className="grid gap-3 rounded-xl border border-line bg-sand/70 p-3 sm:grid-cols-4 lg:grid-cols-8">
           {rows.map(([label, key], idx) => {
@@ -489,3 +565,12 @@ const EmptyRow = ({ onAdd }) => (
 );
 
 const round1 = (n) => Math.round(n * 10) / 10;
+
+/** اسم القالب حسب لغة الواجهة */
+const tName = (t) => (currentLang() === 'en' && t.en ? t.en : t.name);
+
+/** كلمات الحساسية والأطعمة الممنوعة من ملف المريض (مفصولة بفواصل أو أسطر) */
+export function allergyTerms(patient) {
+  return [...new Set([patient?.allergies, patient?.forbidden_foods].filter(Boolean).join('\n')
+    .split(/[،,؛;\n+/]| و /).map((x) => x.trim().replace(/^(حساسية|حساسيه)\s+(من\s+)?/, '')).filter((x) => x.length >= 2))];
+}

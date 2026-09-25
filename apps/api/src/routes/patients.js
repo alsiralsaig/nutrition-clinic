@@ -15,7 +15,9 @@ const PATIENT_FIELDS = [
   'first_name', 'last_name', 'phone', 'birth_date', 'gender', 'height_cm',
   'start_weight', 'goal_weight', 'goal', 'notes', 'status',
   'activity_level', 'reminders_opt_in', 'daily_reminder',
+  'chronic_conditions', 'allergies', 'medications', 'forbidden_foods', 'blood_type',
 ];
+const BLOOD_TYPES = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
 const ACTIVITY_LEVELS = ['sedentary', 'light', 'moderate', 'active', 'very_active'];
 const flag = (v) => (v === true || v === 1 || v === '1' || v === 'true' ? 1 : 0);
 
@@ -37,6 +39,8 @@ function normalizePatient(input, { partial = false } = {}) {
   }
   p.goal = str(p.goal, 500);
   p.notes = str(p.notes, 4000);
+  for (const k of ['chronic_conditions', 'allergies', 'medications', 'forbidden_foods']) p[k] = str(p[k], 1000);
+  p.blood_type = BLOOD_TYPES.includes(String(p.blood_type || '').toUpperCase()) ? String(p.blood_type).toUpperCase() : null;
   p.status = ['active', 'inactive', 'archived'].includes(p.status) ? p.status : 'active';
   p.activity_level = ACTIVITY_LEVELS.includes(p.activity_level) ? p.activity_level : null;
   p.reminders_opt_in = p.reminders_opt_in === undefined ? 1 : flag(p.reminders_opt_in);
@@ -129,10 +133,12 @@ router.post('/', canWrite(), wrap(async (req, res) => {
     return db.insert(`
     INSERT INTO patients (file_no, first_name, last_name, phone, birth_date, gender, height_cm,
                           start_weight, goal_weight, goal, notes, status, activity_level,
-                          reminders_opt_in, daily_reminder, created_by)
+                          reminders_opt_in, daily_reminder, created_by,
+                          chronic_conditions, allergies, medications, forbidden_foods, blood_type)
     VALUES (@file_no, @first_name, @last_name, @phone, @birth_date, @gender, @height_cm,
             @start_weight, @goal_weight, @goal, @notes, @status, @activity_level,
-            @reminders_opt_in, @daily_reminder, @created_by)
+            @reminders_opt_in, @daily_reminder, @created_by,
+            @chronic_conditions, @allergies, @medications, @forbidden_foods, @blood_type)
   `, { ...p, file_no: fileNo.value, created_by: req.user.id });
   });
   await audit({ userId: req.user.id, action: 'patient.create', entity: 'patients', entityId: newId, detail: { file_no: fileNo.value } });
@@ -265,7 +271,9 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
     UPDATE patients SET first_name=@first_name, last_name=@last_name, phone=@phone, birth_date=@birth_date,
       gender=@gender, height_cm=@height_cm, start_weight=@start_weight, goal_weight=@goal_weight,
       goal=@goal, notes=@notes, status=@status, activity_level=@activity_level,
-      reminders_opt_in=@reminders_opt_in, daily_reminder=@daily_reminder, updated_at=${NOW}
+      reminders_opt_in=@reminders_opt_in, daily_reminder=@daily_reminder,
+      chronic_conditions=@chronic_conditions, allergies=@allergies, medications=@medications,
+      forbidden_foods=@forbidden_foods, blood_type=@blood_type, updated_at=${NOW}
     WHERE id=@id
   `, { ...p, id });
   await audit({ userId: req.user.id, action: 'patient.update', entity: 'patients', entityId: id });

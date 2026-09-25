@@ -270,6 +270,63 @@ check('اختيار الوضع الداكن يضيف class dark', window.documen
 await click(q('[data-theme-opt="light"]'), 400);
 check('العودة للوضع الفاتح', !window.document.documentElement.classList.contains('dark'));
 
+// ---------- 11ج) المرحلة E: التاريخ الطبي · القوالب الجاهزة · قفل الشاشة ----------
+{
+  await goto('#/patients/1', 1400);
+  await click(byText('تعديل'), 800);
+  const medForm = q('[data-medical-form]');
+  check('E: نموذج المريض فيه قسم التاريخ الطبي', !!medForm && medForm.querySelectorAll('input').length >= 4 && !!medForm.querySelector('select'));
+  if (medForm) {
+    const ins = medForm.querySelectorAll('input');
+    setValue(ins[1], 'فول سوداني، تونة'); // الحساسية الغذائية
+    setValue(ins[0], 'سكري نوع 2');       // الأمراض المزمنة
+    const sel = medForm.querySelector('select');
+    Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype, 'value').set.call(sel, 'B+');
+    sel.dispatchEvent(new window.Event('change', { bubbles: true }));
+    await click(q('button[form="patient-form"]'), 1600);
+  }
+  const strip = q('[data-medical-strip]');
+  check('E: شريط التنبيهات الطبية يظهر أعلى الملف', !!strip && !!q('[data-medical="allergies"]') && strip.textContent.includes('تونة') && strip.textContent.includes('B+'), strip?.textContent);
+  check('E: بيانات المريض تعرض الأمراض المزمنة', text().includes('سكري نوع 2'));
+
+  const planBtn = byText('تعديل الحالي') || byText('إنشاء برنامج');
+  await click(planBtn, 1000);
+  check('E: محرر البرنامج يعرض تنبيه الحساسية', !!q('[data-allergy-alert]'), q('#plan-form')?.textContent.slice(0, 120));
+  check('E: قوالب جاهزة (3 برامج + 17 وجبة)', qa('[data-diet-template]').length === 3 && qa('[data-meal-template]').length === 17);
+  const before = qa('#plan-form input[type="time"]').length;
+  await click(q('[data-diet-template="muscle-2400"]'), 700);
+  const title = q('#plan-form input')?.value || '';
+  check('E: تطبيق برنامج كامل يستبدل الوجبات والعنوان', qa('#plan-form input[type="time"]').length === 4 && title.includes('التضخيم'), `rows=${qa('#plan-form input[type="time"]').length} title=${title}`);
+  check('E: المجموع يطابق الهدف بعد تطبيق القالب', /2065|2,065/.test(q('.modal-footer, [role="dialog"]')?.textContent || text()));
+  await click(q('[data-undo-template]'), 600);
+  check('E: زر التراجع يعيد الوجبات السابقة', qa('#plan-form input[type="time"]').length === before, `${qa('#plan-form input[type="time"]').length} vs ${before}`);
+  const tuna = q('[data-meal-template="rmt-di-2"]');
+  check('E: وجبة فيها صنف ممنوع تُعلَّم بـ ⚠', !!tuna && tuna.textContent.includes('⚠'));
+  await click(tuna, 600);
+  check('E: إضافة وجبة جاهزة تزيد الصفوف وتُطلق تنبيه التعارض', qa('#plan-form input[type="time"]').length === before + 1 && q('[data-allergy-alert]')?.getAttribute('data-allergy-alert') === 'conflict');
+  await click(q('button[aria-label="إغلاق"]'), 500);
+
+  // قفل الشاشة
+  await click(q('[data-lock-button]'), 600);
+  check('E: أول ضغطة على القفل تفتح إعداد الرمز', !!q('[data-pin-setup]'));
+  setValue(q('[data-pin-new]'), '2468'); setValue(q('[data-pin-confirm]'), '2468');
+  await click(q('[data-pin-save]'), 700);
+  check('E: الشاشة تُقفل بعد حفظ الرمز', !!q('[data-screen-lock]'));
+  check('E: الرمز لا يُحفظ نصاً صريحاً', !Object.keys(window.localStorage).some((k) => k.startsWith('clinic.pin') && window.localStorage.getItem(k) === '2468'));
+  setValue(q('[data-unlock-pin]'), '1111');
+  await click(q('[data-unlock-submit]'), 400);
+  check('E: رمز خاطئ يُظهر خطأ ويبقى القفل', !!q('[data-unlock-error]') && !!q('[data-screen-lock]'));
+  setValue(q('[data-unlock-pin]'), '2468');
+  await click(q('[data-unlock-submit]'), 400);
+  check('E: الرمز الصحيح يفتح الشاشة', !q('[data-screen-lock]') && !!window.localStorage.getItem('clinic.token'));
+  window.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'l', ctrlKey: true, bubbles: true }));
+  await sleep(300);
+  check('E: اختصار Ctrl+L يقفل الشاشة', !!q('[data-screen-lock]'));
+  setValue(q('[data-unlock-pin]'), '2468');
+  await click(q('[data-unlock-submit]'), 400);
+  Object.keys(window.localStorage).filter((k) => k.startsWith('clinic.pin') || k.startsWith('clinic.autolock')).forEach((k) => window.localStorage.removeItem(k));
+}
+
 // ---------- 12) تسجيل الخروج ----------
 await goto('#/', 800);
 window.localStorage.removeItem('clinic.token');
