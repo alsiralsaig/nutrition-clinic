@@ -26,6 +26,7 @@ const daysText = (days) => {
   const set = String(days).split(',').map(Number);
   return WL_DAYS.filter(([v]) => set.includes(v)).map(([, l]) => l).join('، ');
 };
+const PLATFORM_LABEL = { android: 'Android', ios: 'iPhone', mac: 'Mac', windows: 'Windows', other: 'متصفح' };
 const liters = (ml) => (ml == null ? '—' : `${fmt(ml / 1000, 2)} ل`);
 
 /* ============================================================ العادات اليومية */
@@ -164,6 +165,17 @@ export function PortalAccessCard({ patient, canWrite }) {
   const [issued, setIssued] = useState(null);
   const [confirm, setConfirm] = useState(null);
   const [print, setPrint] = useState(false);
+  const [pushOpen, setPushOpen] = useState(false);
+  const [msg, setMsg] = useState({ title: 'رسالة من العيادة', body: '' });
+  const devices = data?.push_devices || [];
+
+  const sendPush = async () => {
+    const r = await run(() => api.post(`/patients/${patient.id}/push`, msg)).catch(() => null);
+    if (!r) return;
+    if (r.sent) { toast(`وصل الإشعار إلى ${r.sent} جهاز ✓`, 'good'); setPushOpen(false); setMsg({ ...msg, body: '' }); }
+    else toast('تعذّر إيصال الإشعار — ربما أُلغي من الجهاز', 'warn');
+    reload();
+  };
 
   const issue = async () => {
     const r = await run(() => api.post(`/patients/${patient.id}/portal-access`), { ok: 'تم إصدار رمز دخول جديد' }).catch(() => null);
@@ -213,6 +225,14 @@ export function PortalAccessCard({ patient, canWrite }) {
           ) : (
             <p className="rounded-xl bg-sand/70 p-3 text-[12.5px] font-bold text-ink/55">لم يُفعَّل دخول المريض للبوابة بعد.</p>
           )}
+          <div className="flex items-center justify-between gap-2 rounded-xl border border-line px-3 py-2 text-[12.5px]" data-push-devices={devices.length}>
+            <span className="font-bold">
+              {devices.length
+                ? <><span className="me-1">🔔</span>{`الإشعارات مفعّلة على ${devices.length} جهاز`}<span className="ms-1 text-ink/45">{`(${devices.map((d) => PLATFORM_LABEL[d.platform] || d.platform).join('، ')})`}</span></>
+                : <span className="text-ink/50">🔕 لم يفعّل المريض إشعارات التطبيق بعد</span>}
+            </span>
+            {canWrite && devices.length > 0 && <button className="btn-soft btn-sm" onClick={() => setPushOpen(true)} data-push-open>إرسال إشعار</button>}
+          </div>
           {canWrite && (
             <div className="flex flex-wrap gap-1.5">
               <button className="btn-primary btn-sm" onClick={() => (data.active ? setConfirm('issue') : issue())}><Icon.refresh /> {data.active ? 'رمز QR جديد' : 'إصدار رمز QR'}</button>
@@ -222,6 +242,13 @@ export function PortalAccessCard({ patient, canWrite }) {
           )}
         </div>
       )}
+      <Modal open={pushOpen} onClose={() => setPushOpen(false)} title="إشعار على جوال المريض" size="sm"
+        footer={<><button className="btn-ghost" onClick={() => setPushOpen(false)}>إلغاء</button><button className="btn-primary" onClick={sendPush} disabled={!msg.body.trim()} data-push-send>إرسال</button></>}>
+        <div className="grid gap-3">
+          <Field label="العنوان"><Input value={msg.title} maxLength={120} onChange={(e) => setMsg({ ...msg, title: e.target.value })} /></Field>
+          <Field label="النص" hint="يظهر فوراً على شاشة جوال المريض"><Textarea rows={3} value={msg.body} maxLength={400} onChange={(e) => setMsg({ ...msg, body: e.target.value })} data-push-body /></Field>
+        </div>
+      </Modal>
       <Confirm open={confirm === 'issue'} tone="primary" title="إصدار رمز جديد" message="سيتوقف رمز QR القديم عن العمل وتُسجَّل خروج أي جهاز دخل به. متابعة؟" confirmText="إصدار"
         onCancel={() => setConfirm(null)} onConfirm={issue} />
       <Confirm open={confirm === 'revoke'} title="إيقاف دخول البوابة" message="لن يتمكن المريض من الدخول بالرمز الحالي، وتُغلق جلساته المفتوحة." confirmText="إيقاف"
@@ -234,6 +261,7 @@ export function PortalAccessCard({ patient, canWrite }) {
             <QrSvg text={issued.url} size={220} />
             <p className="text-[12px]">امسح الرمز بكاميرا هاتفك لفتح خطتك ومواعيدك وتسجيل عاداتك اليومية</p>
             <p className="text-[13px]" dir="auto">{`رقم الملف: ${issued.file_no} · الرمز: ${issued.code}`}</p>
+            <p className="text-[11.5px] leading-5">📲 لتثبيته كتطبيق: افتح الرابط ثم اختر «إضافة إلى الشاشة الرئيسية» من قائمة المتصفح</p>
             <p className="text-[10.5px] opacity-70">بطاقة شخصية — لا تشاركها مع أحد</p>
           </div>
         )}
@@ -525,14 +553,25 @@ export function PortalSettingsCard({ settings = {}, isAdmin, onSaved }) {
     setF({
       portal: settings['clinic.portal_enabled'] !== false, waitlist: settings['clinic.waitlist_enabled'] !== false,
       batch: settings['clinic.waitlist_batch'] ?? 3, minutes: settings['clinic.waitlist_offer_minutes'] ?? 120,
+      pushDaily: settings['clinic.push_daily'] !== false,
     });
   }, [settings]);
+  const [push, setPush] = useState(null);
+  useEffect(() => { api.get('/push/status').then(setPush).catch(() => {}); }, []);
   const save = (patch) => run(() => api.put('/settings', patch), { ok: 'تم الحفظ' }).then(onSaved).catch(() => {});
   return (
     <Card title="بوابة المريض وقائمة الانتظار" subtitle="رموز QR · العادات اليومية · عرض المواعيد الملغاة تلقائياً" icon={<span>📱</span>}>
       <div className="grid gap-3" data-portal-settings>
         <Toggle checked={!!f.portal} onChange={(v) => { setF({ ...f, portal: v }); if (isAdmin) save({ 'clinic.portal_enabled': v }); }} label="تفعيل بوابة المريض (الدخول برمز QR)" />
         <Toggle checked={!!f.waitlist} onChange={(v) => { setF({ ...f, waitlist: v }); if (isAdmin) save({ 'clinic.waitlist_enabled': v }); }} label="عرض المواعيد الملغاة على قائمة الانتظار تلقائياً" />
+        <Toggle checked={!!f.pushDaily} onChange={(v) => { setF({ ...f, pushDaily: v }); if (isAdmin) save({ 'clinic.push_daily': v }); }} label="إشعار صباحي على تطبيق المريض (تذكير الموعد أو أهداف اليوم)" />
+        {push && (
+          <div className="grid gap-1 rounded-xl border border-brand-200 bg-brand-50/40 p-3 text-[12.5px]" data-push-status={push.devices}>
+            <p className="font-extrabold text-brand-700">📲 تطبيق المريض</p>
+            <p className="font-bold">{`${push.patients} مريض فعّلوا الإشعارات على ${push.devices} جهاز`}</p>
+            <p className="text-ink/55">رابط التثبيت:<a className="mx-1 font-bold text-brand-700 underline" href={push.app_url} target="_blank" rel="noopener noreferrer" dir="ltr">{push.app_url}</a></p>
+          </div>
+        )}
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="يُعرض الموعد على" hint="عدد المرضى في كل دفعة — أول من يؤكد يحجز">
             <Select value={f.batch} disabled={!isAdmin} onChange={(e) => { const v = Number(e.target.value); setF({ ...f, batch: v }); save({ 'clinic.waitlist_batch': v }); }}>

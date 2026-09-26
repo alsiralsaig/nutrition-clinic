@@ -219,7 +219,7 @@ const EXPORTS = {
       WHERE substr(dp.created_at,1,10) BETWEEN @from AND @to
       ORDER BY dp.id DESC, m.day_of_week NULLS FIRST, m.position` },
   messages: { sql: `SELECT ml.created_at AS "الوقت", p.file_no AS "رقم الملف", (p.first_name||' '||p.last_name) AS "المريض",
-      ml.kind AS "النوع", ml.to_phone AS "الرقم", ml.status AS "الحالة", ml.error AS "الخطأ"
+      ml.channel AS "القناة", ml.kind AS "النوع", ml.to_phone AS "الرقم", ml.status AS "الحالة", ml.error AS "الخطأ"
       FROM message_log ml LEFT JOIN patients p ON p.id=ml.patient_id
       WHERE substr(ml.created_at,1,10) BETWEEN @from AND @to ORDER BY ml.id DESC` },
 };
@@ -231,7 +231,7 @@ const EN_HEADERS = {
   'الحالة': 'Status', 'تاريخ التسجيل': 'Registered at', 'المريض': 'Patient', 'التاريخ': 'Date', 'الوزن': 'Weight (kg)',
   'الخصر': 'Waist (cm)', 'الورك': 'Hip (cm)', 'الصدر': 'Chest (cm)', 'نسبة الدهون': 'Body fat %', 'الخدمة': 'Service',
   'المبلغ': 'Amount', 'العملة': 'Currency', 'الطريقة': 'Method', 'الفاتورة': 'Invoice', 'ملغي': 'Voided', 'الوقت': 'Time',
-  'النوع': 'Type', 'المدة': 'Duration (min)', 'أُرسل التذكير': 'Reminder sent at', 'السبب': 'Reason', 'الالتزام %': 'Adherence %',
+  'النوع': 'Type', 'القناة': 'Channel', 'المدة': 'Duration (min)', 'أُرسل التذكير': 'Reminder sent at', 'السبب': 'Reason', 'الالتزام %': 'Adherence %',
   'ملاحظات الالتزام': 'Adherence notes', 'الخطة': 'Plan', 'حالة الخطة': 'Plan status', 'اليوم': 'Day', 'الوجبة': 'Meal',
   'العنوان': 'Title', 'المكونات': 'Items', 'السعرات': 'kcal', 'بروتين': 'Protein (g)', 'كربوهيدرات': 'Carbs (g)', 'دهون': 'Fat (g)',
   'الرقم': 'Phone', 'الخطأ': 'Error', 'BMI': 'BMI',

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Nutrition Clinic API",
-    "version": "2.3.1",
+    "version": "2.4.0",
     "description": "واجهة REST لنظام إدارة عيادة التغذية. مصمَّمة ليستهلكها موقع الويب وتطبيق الموبايل (Android/iOS) الخاص بالمريض دون أي تعديل. المصادقة: POST /api/auth/login ثم إرسال `Authorization: Bearer <token>` في كل طلب. التوكن صالح 12 ساعة.",
     "contact": {
       "name": "Clinic IT"
@@ -87,6 +87,10 @@
     {
       "name": "portal",
       "description": "واجهة المريض (توكن مريض — تطبيق الموبايل يستعملها نفسها)"
+    },
+    {
+      "name": "push",
+      "description": "تطبيق المريض (PWA): إشعارات Web Push — Android، وiPhone بعد التثبيت (iOS 16.4+)"
     }
   ],
   "paths": {
@@ -1745,7 +1749,7 @@
         "tags": [
           "portal-access"
         ],
-        "summary": "حالة الوصول (مفعّل؟ آخر دخول، عدد المرات)",
+        "summary": "حالة الوصول (مفعّل؟ آخر دخول، عدد المرات) + push_devices[] و app_url",
         "responses": {
           "200": {
             "description": "OK"
@@ -2677,6 +2681,162 @@
             "$ref": "#/components/parameters/id"
           }
         ]
+      }
+    },
+    "/api/portal/push/key": {
+      "get": {
+        "tags": [
+          "push",
+          "portal"
+        ],
+        "summary": "مفتاح VAPID العام (applicationServerKey) وأجهزة المريض المشتركة",
+        "responses": {
+          "200": {
+            "description": "{ public_key, devices[] }"
+          }
+        }
+      }
+    },
+    "/api/portal/push/subscribe": {
+      "post": {
+        "tags": [
+          "push",
+          "portal"
+        ],
+        "summary": "تسجيل اشتراك إشعارات لهذا الجهاز (upsert على endpoint)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "subscription": {
+                    "type": "object",
+                    "description": "PushSubscription.toJSON(): { endpoint, keys: { p256dh, auth } }"
+                  },
+                  "platform": {
+                    "type": "string",
+                    "enum": [
+                      "ios",
+                      "android"
+                    ]
+                  }
+                },
+                "required": [
+                  "subscription"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "{ subscribed, devices[] }"
+          },
+          "400": {
+            "description": "اشتراك غير صالح"
+          }
+        }
+      }
+    },
+    "/api/portal/push/unsubscribe": {
+      "post": {
+        "tags": [
+          "push",
+          "portal"
+        ],
+        "summary": "إلغاء اشتراك جهاز",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "endpoint": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ subscribed:false, devices[] }"
+          }
+        }
+      }
+    },
+    "/api/portal/push/test": {
+      "post": {
+        "tags": [
+          "push",
+          "portal"
+        ],
+        "summary": "إشعار تجريبي لكل أجهزة المريض",
+        "responses": {
+          "200": {
+            "description": "{ sent, failed, removed, devices }"
+          }
+        }
+      }
+    },
+    "/api/push/status": {
+      "get": {
+        "tags": [
+          "push"
+        ],
+        "summary": "إحصاء الأجهزة والمرضى المشتركين + رابط التثبيت /app",
+        "responses": {
+          "200": {
+            "description": "{ enabled, keys, devices, patients, dry_run, app_url }"
+          }
+        }
+      }
+    },
+    "/api/patients/{id}/push": {
+      "post": {
+        "tags": [
+          "push"
+        ],
+        "summary": "إشعار مخصص من العيادة إلى تطبيق المريض",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/id"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "title": {
+                    "type": "string",
+                    "maxLength": 120
+                  },
+                  "body": {
+                    "type": "string",
+                    "maxLength": 400
+                  }
+                },
+                "required": [
+                  "body"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "{ sent, failed, removed, devices }"
+          },
+          "400": {
+            "description": "بلا نص أو المريض بلا أجهزة"
+          }
+        }
       }
     }
   },

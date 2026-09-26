@@ -61,5 +61,16 @@ for (const c of v.crons || []) {
   else if (!/^\d+$/.test(parts[0]) || !/^\d+$/.test(parts[1])) fail.push(`cron ${c.path}: Hobby يسمح بمرة يومياً فقط — حدّد دقيقة وساعة ثابتتين (مثل "0 5 * * *")`);
 }
 if ((v.crons || []).length) console.log(`  ✓ ${(v.crons || []).length} مهمة مجدولة يومية (ضمن حد Hobby): ${(v.crons || []).map((c) => c.path + ' @ ' + c.schedule + ' UTC').join('، ')}`);
+// تطبيق المريض (PWA): ملفات ثابتة في public/ — Vercel يخدمها قبل rewrite الواجهة
+const PUB = 'apps/web/public';
+if (!fs.existsSync(`${PUB}/sw.js`) || !/addEventListener\('push'/.test(fs.readFileSync(`${PUB}/sw.js`, 'utf8'))) fail.push('public/sw.js مفقود أو لا يعالج الإشعارات');
+try {
+  const man = JSON.parse(fs.readFileSync(`${PUB}/app.webmanifest`, 'utf8'));
+  if (man.start_url !== '/app' || man.display !== 'standalone') fail.push('app.webmanifest: start_url=/app و display=standalone مطلوبان');
+  for (const ic of man.icons || []) if (!fs.existsSync(PUB + ic.src)) fail.push(`أيقونة مفقودة: ${ic.src}`);
+  if (!(man.icons || []).some((i) => i.sizes === '512x512') || !(man.icons || []).some((i) => i.purpose === 'maskable')) fail.push('app.webmanifest: أيقونة 512 وأيقونة maskable مطلوبتان');
+} catch (e) { fail.push(`app.webmanifest غير صالح: ${e.message}`); }
+if (!/app\.webmanifest/.test(fs.readFileSync('apps/web/index.html', 'utf8'))) fail.push('index.html لا يربط app.webmanifest');
+
 if (fail.length) { console.error('\n' + fail.map((x) => '  ✗ ' + x).join('\n')); process.exit(1); }
 console.log('  ✓ إعداد Vercel متسق (' + Object.keys(v).join(', ') + ')');

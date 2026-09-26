@@ -14,10 +14,21 @@
           var l = localStorage.getItem('clinic.lang');
           if (l === 'en') { document.documentElement.lang = 'en'; document.documentElement.dir = 'ltr'; document.title = 'Nutrition Clinic — Patient Management'; }
         } catch (e) {}
+        // تطبيق المريض (/app أو #/portal) أو نظام الإدارة: ملف تثبيت مختلف لكل منهما
+        var patient = /^\/app\/?$/.test(location.pathname) || location.hash.indexOf('#/portal') === 0;
+        var m = document.createElement('link'); m.rel = 'manifest'; m.href = patient ? '/app.webmanifest' : '/staff.webmanifest';
+        document.head.appendChild(m);
+        var at = document.createElement('meta'); at.name = 'apple-mobile-web-app-title'; at.content = patient ? 'بوابتي الصحية' : 'إدارة العيادة';
+        document.head.appendChild(at);
+        if (patient) document.title = 'بوابتي الصحية';
       })();
     </script>
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
     <title>عيادة التغذية — نظام إدارة المرضى</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🥗</text></svg>" />
+    <link rel="icon" type="image/png" href="/icons/favicon-64.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=Cairo:wght@400;600;700&display=swap" rel="stylesheet" />

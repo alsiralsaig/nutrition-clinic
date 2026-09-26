@@ -132,7 +132,10 @@ app.use('/api', protectedApi);
 
 // ---------- واجهة الويب (بعد npm run build) ----------
 if (fs.existsSync(path.join(WEB_DIST, 'index.html'))) {
-  app.use(express.static(WEB_DIST));
+  app.use(express.static(WEB_DIST, {
+    // عامل الخدمة (تطبيق المريض) يجب ألا يُخزَّن حتى تصل التحديثات فوراً
+    setHeaders: (res, file) => { if (/[\\/](sw\.js|[\w-]+\.webmanifest)$/.test(file)) res.setHeader('Cache-Control', 'no-cache'); },
+  }));
   app.get(/^\/(?!api\/).*/, (req, res) => res.sendFile(path.join(WEB_DIST, 'index.html')));
 } else {
   app.get('/', (req, res) => res.json({

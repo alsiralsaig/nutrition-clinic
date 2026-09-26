@@ -5,6 +5,7 @@ import { badRequest, notFound, str, requiredStr, wrap, sumMacros, isDate, toNum,
 import { getSetting } from '../db.js';
 import { ACTIVITY, GOALS, DAYS, ageFrom, inferGoal, computeTargets, generateWeeklyPlan, defaultAdvice, buildShoppingList, shoppingListText } from '../nutrition.js';
 import { canWrite } from '../auth.js';
+import { pushToPatient } from '../push.js';
 
 export const router = Router();
 
@@ -51,6 +52,13 @@ function waterMl(v) {
   if (n > 0 && n <= 10) n *= 1000;
   if (n < 500 || n > 8000) throw badRequest('هدف الماء غير منطقي (0.5–8 لتر)');
   return Math.round(n);
+}
+
+/** إشعار المريض بأن خطته الجديدة جاهزة (عند التحول إلى «معتمد» فقط، لا عند كل حفظ) */
+async function notifyPlanActive(planId, prevStatus, userId) {
+  const p = await db.get(`SELECT id, patient_id, title, status FROM diet_plans WHERE id=?`, planId);
+  if (p?.status !== 'active' || prevStatus === 'active') return;
+  await pushToPatient(p.patient_id, { title: '🥗 خطتك الغذائية الجديدة جاهزة', body: p.title, url: '/#/portal/plan', kind: 'plan', tag: `plan-${p.id}`, refId: p.id, userId });
 }
 
 /** الخطة المعتمدة تحدد هدف الماء اليومي في متتبع العادات (بوابة المريض) */
@@ -203,6 +211,7 @@ router.post('/', canWrite(), wrap(async (req, res) => {
     return planId;
   });
   await syncWaterTarget(newId);
+  await notifyPlanActive(newId, null, req.user.id);
   await audit({ userId: req.user.id, action: 'plan.create', entity: 'diet_plans', entityId: newId });
   res.status(201).json(await loadPlan(newId));
 }));
@@ -241,6 +250,7 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
     }
   });
   await syncWaterTarget(id);
+  await notifyPlanActive(id, plan.status, req.user.id);
   await audit({ userId: req.user.id, action: 'plan.update', entity: 'diet_plans', entityId: id });
   res.json(await loadPlan(id));
 }));
@@ -255,6 +265,7 @@ router.post('/:id(\\d+)/activate', canWrite(), wrap(async (req, res) => {
     await db.run(`UPDATE diet_plans SET status='active', updated_at=${NOW} WHERE id=?`, id);
   });
   await syncWaterTarget(id);
+  await notifyPlanActive(id, plan.status, req.user.id);
   await audit({ userId: req.user.id, action: 'plan.activate', entity: 'diet_plans', entityId: id });
   res.json(await loadPlan(id));
 }));

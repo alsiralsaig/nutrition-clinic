@@ -9,6 +9,7 @@ import { build } from 'esbuild';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 import { JSDOM, VirtualConsole } from 'jsdom';
 import { transformAsync } from '@babel/core';
 import arabicI18n from '../babel-plugin-arabic-i18n.js';
@@ -98,8 +99,39 @@ function installFakeMedia(window) {
   };
 }
 
+// ---------- iPhone/Android + Web Push المحاكاة (jsdom لا يدعمها) ----------
+const IPHONE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
+function fakeDevice({ ios = false, standalone = false, push = false } = {}) {
+  return (w) => {
+    if (ios) Object.defineProperty(w.navigator, 'userAgent', { configurable: true, value: IPHONE_UA });
+    if (standalone) Object.defineProperty(w.navigator, 'standalone', { configurable: true, value: true });
+    if (!push) return;
+    Object.defineProperty(w, 'isSecureContext', { configurable: true, value: true });
+    w.__pushSubs = 0;
+    let sub = null;
+    const reg = {
+      pushManager: {
+        getSubscription: async () => sub,
+        subscribe: async (opts) => {
+          const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys();
+          const json = { endpoint: `https://web.push.apple.com/fake-${crypto.randomBytes(6).toString('hex')}`, expirationTime: null,
+            keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } };
+          w.__pushSubs += 1; w.__pushKeyLen = opts.applicationServerKey?.length;
+          sub = { endpoint: json.endpoint, options: { applicationServerKey: opts.applicationServerKey?.buffer }, toJSON: () => json, unsubscribe: async () => { sub = null; return true; } };
+          return sub;
+        },
+      },
+    };
+    Object.defineProperty(w.navigator, 'serviceWorker', { configurable: true, value: {
+      register: async () => reg, getRegistration: async () => reg, ready: Promise.resolve(reg), addEventListener() {}, controller: null,
+    } });
+    w.PushManager = function PushManager() {};
+    w.Notification = { permission: 'default', requestPermission: async () => { w.Notification.permission = 'granted'; return 'granted'; } };
+  };
+}
+
 // ---------- نافذة ----------
-function openWindow({ hash, lang = 'ar', storage = {}, label }) {
+function openWindow({ hash, lang = 'ar', storage = {}, label, setup }) {
   const errors = [];
   const vc = new VirtualConsole();
   vc.on('jsdomError', (e) => { if (!/Could not parse CSS|Not implemented/.test(e.message)) errors.push(e.message + (e.detail ? ` :: ${e.detail}` : '')); });
@@ -135,6 +167,7 @@ function openWindow({ hash, lang = 'ar', storage = {}, label }) {
     return res;
   };
   installFakeMedia(w);
+  setup?.(w);
   w.eval(code);
   const q = (s) => w.document.querySelector(s);
   const qa = (s) => Array.from(w.document.querySelectorAll(s));
@@ -270,6 +303,41 @@ try {
   const ended = await B.waitFor(() => B.q('[data-video-call="ended"]'), 8000);
   check('المريض يرى «انتهت المكالمة»', ended && B.T().includes('انتهت المكالمة'));
 
+  // ================= تطبيق المريض: التثبيت + الإشعارات (PWA) =================
+  await B.go('#/portal', 1500);
+  await B.waitFor(() => B.q('[data-portal-app-card]'), 5000);
+  check('البوابة: بطاقة «تطبيقك على الجوال»', B.q('[data-portal-app-card]')?.dataset.standalone === '0' && B.T().includes('تطبيقك على الجوال'));
+  check('متصفح بلا دعم للإشعارات: رسالة واضحة بدل الزر', !!B.q('[data-push-state="unsupported"]') && !B.q('[data-push-enable]'));
+  await B.clk(B.q('[data-install-steps-toggle]'), 400);
+  check('خطوات التثبيت (Android): قائمة المتصفح ⋮', B.q('[data-install-steps="android"]')?.textContent.includes('تثبيت التطبيق'));
+  const pTok = B.w.localStorage.getItem('clinic.portal');
+  const I = openWindow({ hash: '#/portal', storage: { 'clinic.portal': pTok }, label: 'I', setup: fakeDevice({ ios: true }) });
+  await I.waitFor(() => I.q('[data-portal-app-card]'), 9000);
+  await I.clk(I.q('[data-install-steps-toggle]'), 400);
+  check('iPhone في Safari: خطوات «إضافة إلى الشاشة الرئيسية» + الدخول مرة واحدة برقم الملف', I.q('[data-install-steps="ios"]')?.textContent.includes('إضافة إلى الشاشة الرئيسية') && I.q('[data-install-steps="ios"]').textContent.includes(p1.file_no));
+  check('iPhone في Safari: الإشعارات تتطلب التثبيت أولاً', I.q('[data-push-state="unsupported"]')?.textContent.includes('بعد تثبيت التطبيق'));
+  I.w.close();
+  const P = openWindow({ hash: '#/portal', storage: { 'clinic.portal': pTok }, label: 'P', setup: fakeDevice({ ios: true, standalone: true, push: true }) });
+  await P.waitFor(() => P.q('[data-push-enable]'), 9000);
+  check('التطبيق المثبّت على iPhone: «أنت تستخدم التطبيق المثبّت» + زر تفعيل الإشعارات', P.q('[data-portal-app-card]')?.dataset.standalone === '1' && !!P.q('[data-push-enable]'));
+  await P.clk(P.q('[data-push-enable]'), 2000);
+  await P.waitFor(() => P.q('[data-push-state="on"]'), 5000);
+  const devs = (await api('GET', '/api/patients/1/portal-access', null, staffToken)).json?.push_devices || [];
+  check('تفعيل الإشعارات: إذن + اشتراك بمفتاح العيادة (65 بايت) + حفظ في الخادم', !!P.q('[data-push-state="on"]') && P.w.__pushKeyLen === 65 && devs.length === 1 && devs[0].platform === 'ios', JSON.stringify(devs));
+  check('تفعيل الإشعارات: إشعار تجريبي أُرسل', P.T().includes('وصلك إشعار تجريبي'), P.T().slice(-200));
+  await A.go('#/patients', 500); await A.go('#/patients/1', 1800);
+  await A.waitFor(() => A.q('[data-push-devices="1"]'), 6000);
+  check('ملف المريض: «الإشعارات مفعّلة على 1 جهاز (iPhone)»', !!A.q('[data-push-devices="1"]') && A.T().includes('iPhone'));
+  await A.clk(A.q('[data-push-open]'), 500);
+  A.setV(A.q('[data-push-body]'), 'تذكير: أحضر نتائج التحاليل معك');
+  await A.clk(A.q('[data-push-send]'), 1500);
+  check('العيادة ترسل إشعاراً مخصصاً من ملف المريض', A.T().includes('وصل الإشعار إلى 1 جهاز'), A.T().slice(-200));
+  await P.clk(P.qa('[data-portal-app-card] button').find((b) => b.textContent.trim() === 'إيقاف'), 1500);
+  check('إيقاف الإشعارات من الجهاز', !!P.q('[data-push-enable]') && (await api('GET', '/api/patients/1/portal-access', null, staffToken)).json?.push_devices?.length === 0);
+  const pwaErrs = [...I.errors, ...P.errors].filter((e) => !/ResizeObserver|getComputedStyle|not implemented|Could not parse CSS/i.test(e));
+  check('لا أخطاء تشغيل في نوافذ iPhone', pwaErrs.length === 0, pwaErrs.slice(0, 3).join(' | '));
+  P.w.close();
+
   // ================= الدخول برقم الملف + الرمز =================
   await B.go('#/portal', 1500);
   await B.clk(B.q('button[title="خروج"]'), 800);
@@ -293,6 +361,8 @@ try {
   await A.go('#/settings', 1200);
   await A.clk(A.byText('واتساب والتذكيرات'), 1200);
   check('الإعدادات: بطاقة «بوابة المريض وقائمة الانتظار»', !!A.q('[data-portal-settings]') && A.T().includes('مهلة الرد على العرض'));
+  await A.waitFor(() => A.q('[data-push-status]'), 4000);
+  check('الإعدادات: الإشعار الصباحي + إحصاء أجهزة تطبيق المريض + رابط /app', A.T().includes('إشعار صباحي على تطبيق المريض') && /\/app$/.test(A.q('[data-push-status] a')?.getAttribute('href') || ''));
 
   // ================= English =================
   const again = (await api('POST', '/api/patients/1/portal-access', {}, staffToken)).json;

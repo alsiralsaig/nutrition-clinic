@@ -6,6 +6,13 @@ import App from './App.jsx';
 import { AppProvider } from './app-context.jsx';
 import { ThemeProvider } from './theme.jsx';
 import './styles.css';
+import { initPwa } from './pwa.js';
+
+// رابط تثبيت تطبيق المريض القصير: /app → #/portal (التطبيق يعمل بمسارات #)
+if (/^\/app\/?$/.test(window.location.pathname)) {
+  window.history.replaceState(null, '', `/${window.location.hash || '#/portal'}`);
+}
+initPwa();
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>

@@ -17,6 +17,10 @@ import { ACTIVITY_LABELS, TIME_PREFS, WL_DAYS } from '../components/Care.jsx';
 import { DAYS } from '../components/Smart.jsx';
 import { Badge, Icon, Spinner } from '../components/ui.jsx';
 import { APPT_STATUS, VISIT_TYPES, addDays, fmt, longDate, shortDate, todayISO } from '../format.js';
+import {
+  canPromptInstall, currentSubscription, isStandalone, onPwaChange, platform, promptInstall, pushPermission, pushSupported,
+  subscribePush, unsubscribePush,
+} from '../pwa.js';
 
 const ACT_ICONS = { walk: '🚶', run: '🏃', gym: '🏋️', cycling: '🚴', swim: '🏊', sport: '⚽', home: '🧘', other: '✨' };
 
@@ -196,6 +200,7 @@ function PortalHome() {
       </header>
 
       <div className="grid gap-3 px-4 pt-4">
+        {me._offline && <p className="rounded-xl bg-[#fbf3df] px-3 py-2 text-center text-[12.5px] font-bold text-[#7a5a12] dark:bg-[#2a2415] dark:text-[#e7b54a]" data-portal-offline>📴 لا يوجد اتصال — تعرض آخر نسخة محفوظة من ملفك</p>}
         {me.call && <CallBanner call={me.call} onJoin={() => nav('/portal/call')} />}
         {me.offers?.length > 0 && <OffersBanner offers={me.offers} onDone={load} toast={toast} />}
         {tab === 'today' && <TodayTab me={me} reload={load} toast={toast} />}
@@ -409,8 +414,124 @@ function TodayTab({ me, reload, toast }) {
           </div>
         </section>
       )}
+      <AppCard me={me} toast={toast} />
       <p className="pb-2 text-center text-[11px] font-bold text-ink/35">تُحفظ تلقائياً وتظهر لأخصائي التغذية في ملفك</p>
     </div>
+  );
+}
+
+/* ------------------------------------------------------------ التطبيق على الجوال: التثبيت + الإشعارات */
+function AppCard({ me, toast }) {
+  const os = platform();
+  const standalone = isStandalone();
+  const [, force] = useState(0);
+  const [sub, setSub] = useState(null); // اشتراك هذا الجهاز
+  const [busy, setBusy] = useState(false);
+  const [showSteps, setShowSteps] = useState(false);
+  const supported = pushSupported();
+  const synced = useRef(false);
+
+  useEffect(() => onPwaChange(() => force((n) => n + 1)), []);
+  useEffect(() => {
+    if (!supported) return;
+    currentSubscription().then(async (s) => {
+      setSub(s);
+      // أعد ربط اشتراك الجهاز بالمريض الحالي (بعد إعادة الدخول أو تغيّر الخادم) — مرة لكل تحميل
+      if (s && !synced.current) { synced.current = true; await portalApi.post('/push/subscribe', { subscription: s.toJSON(), platform: os }).catch(() => {}); }
+    });
+  }, [supported]);
+
+  const enable = async () => {
+    setBusy(true);
+    try {
+      const { public_key: key } = await portalApi.get('/push/key');
+      const json = await subscribePush(key);
+      await portalApi.post('/push/subscribe', { subscription: json, platform: os });
+      setSub(await currentSubscription());
+      const t = await portalApi.post('/push/test');
+      toast(t.sent ? 'تم تفعيل الإشعارات — وصلك إشعار تجريبي ✓' : 'تم التفعيل ✓', 'good', 5000);
+    } catch (e) { toast(e.message, 'bad', 7000); }
+    finally { setBusy(false); }
+  };
+  const disable = async () => {
+    setBusy(true);
+    try {
+      const endpoint = await unsubscribePush();
+      if (endpoint) await portalApi.post('/push/unsubscribe', { endpoint });
+      setSub(null);
+      toast('أُوقفت الإشعارات على هذا الجهاز', 'info');
+    } catch (e) { toast(e.message, 'bad'); }
+    finally { setBusy(false); }
+  };
+  const test = async () => {
+    setBusy(true);
+    try { const t = await portalApi.post('/push/test'); toast(t.sent ? 'أُرسل إشعار تجريبي ✓' : 'لم يصل — أعد تفعيل الإشعارات', t.sent ? 'good' : 'warn'); }
+    catch (e) { toast(e.message, 'bad'); }
+    finally { setBusy(false); }
+  };
+  const install = async () => { if (await promptInstall()) toast('تم تثبيت التطبيق ✓ — افتحه من الشاشة الرئيسية', 'good', 6000); };
+
+  const denied = pushPermission() === 'denied';
+  let pushBody;
+  if (sub) {
+    pushBody = (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="flex-1 text-[12.5px] font-extrabold text-brand-700" data-push-state="on">🔔 الإشعارات مفعّلة على هذا الجهاز</span>
+        <button className="btn-ghost btn-sm" disabled={busy} onClick={test}>تجربة</button>
+        <button className="btn-ghost btn-sm text-ink/50" disabled={busy} onClick={disable}>إيقاف</button>
+      </div>
+    );
+  } else if (supported && !denied) {
+    pushBody = (
+      <button className="btn-primary w-full !py-2.5" disabled={busy} onClick={enable} data-push-enable>{busy ? '…' : '🔔 فعّل الإشعارات'}</button>
+    );
+  } else {
+    pushBody = (
+      <p className="rounded-xl bg-sand/70 p-2.5 text-[12px] font-bold leading-6 text-ink/60" data-push-state="unsupported">
+        {denied ? 'الإشعارات محظورة لهذا الموقع — فعّلها من إعدادات الجوال ثم أعد فتح التطبيق.'
+          : os === 'ios' && !standalone ? 'على iPhone تعمل الإشعارات بعد تثبيت التطبيق على الشاشة الرئيسية (iOS 16.4 أو أحدث).'
+            : 'هذا المتصفح لا يدعم الإشعارات — جرّب Chrome أو Safari.'}
+      </p>
+    );
+  }
+
+  return (
+    <section className="grid gap-3 rounded-2xl bg-surface p-4 shadow-card" data-portal-app-card data-standalone={standalone ? '1' : '0'}>
+      <div className="flex items-center gap-3">
+        <img src="/icons/icon-192.png" alt="" className="h-11 w-11 rounded-xl" />
+        <div className="min-w-0 flex-1">
+          <p className="text-[15px] font-extrabold">📲 تطبيقك على الجوال</p>
+          <p className="text-[12px] font-bold text-ink/50">تذكير بالمواعيد، عروض المواعيد الأقرب، ودعوة الاستشارة المرئية فوراً</p>
+        </div>
+      </div>
+
+      {standalone ? (
+        <p className="text-[12.5px] font-bold text-brand-700">✓ أنت تستخدم التطبيق المثبّت</p>
+      ) : canPromptInstall() ? (
+        <button className="btn-soft w-full !py-2.5" onClick={install} data-install>⬇️ ثبّت التطبيق على الشاشة الرئيسية</button>
+      ) : (
+        <div className="grid gap-2">
+          <button className="btn-soft w-full !py-2.5" onClick={() => setShowSteps((v) => !v)} data-install-steps-toggle>⬇️ كيف أثبّت التطبيق؟</button>
+          {showSteps && (os === 'ios' ? (
+            <ol className="grid list-decimal gap-1 rounded-xl bg-sand/70 p-3 ps-7 text-[12.5px] font-bold leading-6" data-install-steps="ios">
+              <li>افتح هذه الصفحة في Safari.</li>
+              <li>اضغط زر المشاركة (المربع والسهم ⬆️) أسفل الشاشة.</li>
+              <li>اختر «إضافة إلى الشاشة الرئيسية» ثم «إضافة».</li>
+              <li>{`افتح التطبيق من أيقونته وسجّل الدخول مرة واحدة: رقم الملف ${me.patient.file_no} والرمز (أو امسح رمز QR).`}</li>
+              <li>فعّل الإشعارات من داخل التطبيق.</li>
+            </ol>
+          ) : (
+            <ol className="grid list-decimal gap-1 rounded-xl bg-sand/70 p-3 ps-7 text-[12.5px] font-bold leading-6" data-install-steps="android">
+              <li>افتح هذه الصفحة في Chrome.</li>
+              <li>اضغط قائمة المتصفح ⋮ أعلى الشاشة.</li>
+              <li>اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية».</li>
+            </ol>
+          ))}
+        </div>
+      )}
+
+      {pushBody}
+    </section>
   );
 }
 

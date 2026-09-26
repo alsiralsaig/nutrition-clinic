@@ -4,6 +4,17 @@ import { db, audit } from '../db.js';
 import { badRequest, conflict, notFound, str, wrap, isDate, isTime, todayISO } from '../lib.js';
 import { canWrite } from '../auth.js';
 import { offerSlot, publicUrl } from '../care.js';
+import { pushToPatient } from '../push.js';
+
+/** إشعار تطبيق المريض بحجز/تغيير موعده (لا يُرسل للمواعيد الماضية) */
+async function notifyAppt(appt, kind, userId) {
+  if (!ACTIVE.includes(appt.status) || appt.date < todayISO()) return;
+  const video = appt.mode === 'video' ? ' · استشارة مرئية 🎥' : '';
+  await pushToPatient(appt.patient_id, {
+    title: kind === 'appointment_booked' ? '📅 تم حجز موعدك' : '🔁 تغيّر موعدك',
+    body: `${appt.date} الساعة ${appt.time}${video}`, url: '/#/portal/appointments', kind, tag: `appt-${appt.id}`, refId: appt.id, userId,
+  });
+}
 
 const ACTIVE = ['scheduled', 'confirmed'];
 /** موعد نشط أصبح شاغراً (إلغاء/حذف/تغيير وقت) → يُعرض تلقائياً على قائمة الانتظار */
@@ -105,6 +116,7 @@ router.post('/', canWrite(), wrap(async (req, res) => {
     VALUES (@patient_id, @date, @time, @duration_min, @visit_type, @status, @room, @notes, @mode, @created_by)
   `, { ...data, created_by: req.user.id });
   await audit({ userId: req.user.id, action: 'appointment.create', entity: 'appointments', entityId: newId });
+  await notifyAppt({ ...data, id: newId }, 'appointment_booked', req.user.id);
   res.status(201).json(await db.get(`${SELECT} WHERE a.id = ?`, newId));
 }));
 
@@ -121,6 +133,9 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
   const wasActive = ACTIVE.includes(existing.status);
   const slotFreed = wasActive && (!ACTIVE.includes(data.status) ? data.status === 'cancelled' : (data.date !== existing.date || data.time !== existing.time));
   const waitlist = slotFreed ? await freed(req, existing) : null;
+  if (ACTIVE.includes(data.status) && (data.date !== existing.date || data.time !== existing.time || data.patient_id !== existing.patient_id)) {
+    await notifyAppt({ ...data, id }, data.patient_id !== existing.patient_id ? 'appointment_booked' : 'appointment_moved', req.user.id);
+  }
   res.json({ ...(await db.get(`${SELECT} WHERE a.id = ?`, id)), waitlist });
 }));
 

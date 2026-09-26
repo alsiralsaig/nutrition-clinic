@@ -11,6 +11,7 @@ import {
 } from '../care.js';
 import { withTotals } from './plans.js';
 import { dayIndex } from '../nutrition.js';
+import { vapidKeys, subscribe, unsubscribe, devicesFor, pushToPatient } from '../push.js';
 
 export const router = Router();
 
@@ -74,6 +75,7 @@ router.get('/me', wrap(async (req, res) => {
     offers: await offersFor(`o.patient_id=? AND o.status='pending'`, id),
     call,
     activity_types: ACTIVITY_TYPES,
+    push: { devices: (await devicesFor(id)).length },
     now: { date: today, time: nowTimeHM() },
   });
 }));
@@ -146,4 +148,23 @@ router.post('/calls/:id(\\d+)/leave', wrap(async (req, res) => {
   // المريض يغادر فقط؛ إنهاء الجلسة بيد الأخصائي (قد يعود المريض بعد انقطاع)
   const id = await db.insert(`INSERT INTO call_signals (call_id, sender, kind) VALUES (?, 'patient', 'bye')`, Number(req.params.id));
   res.json({ left: true, id });
+}));
+
+// ---------- إشعارات تطبيق المريض (Web Push) ----------
+router.get('/push/key', wrap(async (req, res) => {
+  res.json({ public_key: (await vapidKeys()).publicKey, devices: await devicesFor(me(req)) });
+}));
+router.post('/push/subscribe', wrap(async (req, res) => {
+  const devices = await subscribe({ patientId: me(req), subscription: req.body?.subscription, userAgent: req.get('user-agent'), platform: req.body?.platform });
+  if (!devices) throw badRequest('اشتراك الإشعارات غير صالح');
+  await audit({ userId: null, action: 'portal.push_subscribe', entity: 'patients', entityId: me(req) });
+  res.status(201).json({ subscribed: true, devices });
+}));
+router.post('/push/unsubscribe', wrap(async (req, res) => {
+  res.json({ subscribed: false, devices: await unsubscribe({ patientId: me(req), endpoint: req.body?.endpoint }) });
+}));
+router.post('/push/test', wrap(async (req, res) => {
+  const p = await db.get(`SELECT first_name FROM patients WHERE id=?`, me(req));
+  const r = await pushToPatient(me(req), { title: 'تم تفعيل الإشعارات ✅', body: `أهلاً ${p.first_name}، ستصلك هنا تذكيرات المواعيد والعروض والاستشارات.`, kind: 'test', tag: 'test' });
+  res.json(r);
 }));

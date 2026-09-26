@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SERVER = path.join(__dirname, '..', 'src', 'server.js');
@@ -62,7 +63,7 @@ const hmPlus = (mins) => {
 const addDays = (iso, n) => { const d = new Date(`${iso}T12:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 
 try {
-  check('الخادم يقلع (المخطط الإصدار 4)', await boot({ WHATSAPP_DRY_RUN: '1', WHATSAPP_TOKEN: '', WHATSAPP_PHONE_ID: '' }), serverLog.slice(-500));
+  check('الخادم يقلع (المخطط الإصدار 4)', await boot({ WHATSAPP_DRY_RUN: '1', WHATSAPP_TOKEN: '', WHATSAPP_PHONE_ID: '', PUSH_DRY_RUN: '1', VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '' }), serverLog.slice(-500));
   const tk = (await req('POST', '/api/auth/login', { body: { username: 'admin', password: 'admin123' } })).json?.token;
   const viewer = (await req('POST', '/api/auth/login', { body: { username: 'reception', password: 'reception123' } })).json?.token;
   check('دخول المدير والاستقبال', !!tk && !!viewer);
@@ -199,15 +200,75 @@ try {
   check('المريض يستلم «bye» وحالة ended', p2.json?.status === 'ended' && p2.json?.items?.some((i) => i.kind === 'bye'));
   check('لا مكالمة نشطة بعد الإنهاء', (await req('GET', '/api/portal/calls/active', { token: pA2 })).json?.call === null);
 
+  // ================= إشعارات تطبيق المريض (PWA / Web Push — PUSH_DRY_RUN) =================
+  const fakeSub = (tag) => {
+    const ecdh = crypto.createECDH('prime256v1'); ecdh.generateKeys();
+    return { endpoint: `https://fcm.googleapis.com/fcm/send/${tag}-${crypto.randomBytes(8).toString('hex')}`,
+      keys: { p256dh: ecdh.getPublicKey().toString('base64url'), auth: crypto.randomBytes(16).toString('base64url') } };
+  };
+  check('مفتاح الإشعارات يتطلب دخول المريض', (await req('GET', '/api/portal/push/key')).status === 401);
+  const key = await req('GET', '/api/portal/push/key', { token: pA2 });
+  check('مفتاح VAPID العام يُولَّد تلقائياً (65 بايت)', Buffer.from(key.json?.public_key || '', 'base64url').length === 65, JSON.stringify(key.json));
+  check('المفتاح ثابت بين الطلبات (محفوظ)', (await req('GET', '/api/portal/push/key', { token: pB })).json?.public_key === key.json?.public_key);
+  check('اشتراك غير صالح → 400', (await req('POST', '/api/portal/push/subscribe', { token: pA2, body: { subscription: { endpoint: 'x' } } })).status === 400);
+  const subA = fakeSub('a1');
+  const s1 = await req('POST', '/api/portal/push/subscribe', { token: pA2, body: { subscription: subA }, headers: { 'user-agent': 'Mozilla/5.0 (Linux; Android 14) Chrome/128' } });
+  check('اشتراك جهاز Android', s1.status === 201 && s1.json?.devices?.length === 1 && s1.json.devices[0].platform === 'android', JSON.stringify(s1.json));
+  const s1b = await req('POST', '/api/portal/push/subscribe', { token: pA2, body: { subscription: subA } });
+  check('إعادة الاشتراك بنفس الجهاز لا تكرره', s1b.json?.devices?.length === 1);
+  check('/portal/me يعرض عدد أجهزة الإشعارات', (await req('GET', '/api/portal/me', { token: pA2 })).json?.push?.devices === 1);
+  const t1 = await req('POST', '/api/portal/push/test', { token: pA2 });
+  check('إشعار تجريبي يصل للجهاز', t1.json?.sent === 1 && t1.json?.devices === 1, JSON.stringify(t1.json));
+  await req('POST', '/api/portal/push/subscribe', { token: pA2, body: { subscription: { ...fakeSub('x'), endpoint: 'https://push.example/gone/1' } } });
+  const t2 = await req('POST', '/api/portal/push/test', { token: pA2 });
+  check('اشتراك منتهٍ (410) يُحذف تلقائياً', t2.json?.sent === 1 && t2.json?.removed === 1, JSON.stringify(t2.json));
+  const pa = await req('GET', `/api/patients/${A.id}/portal-access`, { token: tk });
+  check('ملف المريض يعرض أجهزة الإشعارات ورابط التطبيق', pa.json?.push_devices?.length === 1 && /\/app$/.test(pa.json?.app_url || ''), JSON.stringify(pa.json));
+  const cp = await req('POST', `/api/patients/${A.id}/push`, { token: tk, body: { title: 'تذكير', body: 'لا تنسي شرب الماء' } });
+  check('العيادة ترسل إشعاراً مخصصاً', cp.status === 200 && cp.json?.sent === 1);
+  check('إشعار مخصص بلا نص → 400', (await req('POST', `/api/patients/${A.id}/push`, { token: tk, body: { title: 'x' } })).status === 400);
+  check('مريض بلا أجهزة → 400', (await req('POST', `/api/patients/${B.id}/push`, { token: tk, body: { body: 'مرحباً' } })).status === 400);
+  check('الاستقبال (قراءة فقط) لا يرسل إشعارات', (await req('POST', `/api/patients/${A.id}/push`, { token: viewer, body: { body: 'x' } })).status === 403);
+  const dP = addDays(today, 6);
+  const apP = await req('POST', '/api/appointments', { token: tk, body: { patient_id: A.id, date: dP, time: '08:10' } });
+  await req('PUT', `/api/appointments/${apP.json?.id}`, { token: tk, body: { time: '08:30' } });
+  const plP = await req('POST', '/api/diet-plans', { token: tk, body: { patient_id: A.id, title: 'خطة الإشعار', target_kcal: 1500, status: 'active', meals: [{ slot: 'الفطور', kcal: 300 }] } });
+  await req('PUT', `/api/diet-plans/${plP.json?.id}`, { token: tk, body: { title: 'خطة الإشعار ٢' } });
+  const log = await req('GET', `/api/whatsapp/log?patient_id=${A.id}`, { token: tk });
+  const pushKinds = (log.json?.items || []).filter((m) => m.channel === 'push' && m.status === 'sent').map((m) => m.kind);
+  check('إشعارات تلقائية: حجز موعد + تغيير موعد + خطة جديدة (مرة واحدة)', pushKinds.includes('appointment_booked') && pushKinds.includes('appointment_moved') && pushKinds.filter((k) => k === 'plan').length === 1, JSON.stringify(pushKinds));
+  const ps = await req('GET', '/api/push/status', { token: tk });
+  check('حالة الإشعارات في الإعدادات', ps.json?.devices === 1 && ps.json?.patients === 1 && ps.json?.dry_run === true, JSON.stringify(ps.json));
+  const un = await req('POST', '/api/portal/push/unsubscribe', { token: pA2, body: { endpoint: subA.endpoint } });
+  check('إيقاف الإشعارات من الجهاز', un.json?.devices?.length === 0);
+  await req('POST', '/api/portal/push/subscribe', { token: pA2, body: { subscription: fakeSub('a2') } });
+
   // ================= الإلغاء والنسخ والمهمة اليومية =================
   const rv = await req('DELETE', `/api/patients/${A.id}/portal-access`, { token: tk });
   check('إلغاء رمز البوابة يُسقط الجلسة', rv.json?.revoked === 1 && (await req('GET', '/api/portal/me', { token: pA2 })).status === 401);
+  check('إلغاء الرمز يحذف أجهزة إشعارات المريض', (await req('GET', `/api/patients/${A.id}/portal-access`, { token: tk })).json?.push_devices?.length === 0);
   const bk = await req('GET', '/api/backup', { token: tk });
   check('النسخة الاحتياطية تشمل العادات وقائمة الانتظار والرموز', ['habit_logs', 'waitlist', 'waitlist_offers', 'patient_access'].every((t) => Array.isArray(bk.json?.tables?.[t])) && bk.json.tables.habit_logs.length >= 3);
   const run = await req('POST', '/api/cron/daily/run', { token: tk });
   check('المهمة اليومية تنظّف العروض المنتهية والمكالمات', run.status === 200 && 'waitlist' in run.json && run.json?.calls?.signals_deleted >= 1, JSON.stringify(run.json).slice(0, 300));
   const notif = await req('GET', '/api/notifications', { token: tk });
   check('التنبيهات: حجز من قائمة الانتظار + عروض معلّقة', notif.json?.items?.some((i) => i.type === 'waitlist_booked') && notif.json?.items?.some((i) => i.type === 'waitlist_pending'), JSON.stringify(notif.json?.items?.map((i) => i.type)));
+  // المهمة اليومية: تذكير موعد الغد بإشعار (مرة واحدة) + تحفيز صباحي لمن لديه خطة معتمدة
+  await req('POST', '/api/portal/push/subscribe', { token: pB, body: { subscription: fakeSub('b1') } });
+  await req('POST', '/api/appointments', { token: tk, body: { patient_id: B.id, date: addDays(today, 1), time: '06:50' } });
+  const E = await mk('هالة', '0911000005', 88);
+  const accE = (await req('POST', `/api/patients/${E.id}/portal-access`, { token: tk })).json;
+  const pE = (await req('POST', '/api/portal/auth/qr', { body: { token: accE.token } })).json?.token;
+  await req('POST', '/api/portal/push/subscribe', { token: pE, body: { subscription: fakeSub('e1') } });
+  await req('POST', '/api/diet-plans', { token: tk, body: { patient_id: E.id, title: 'خطة جنى', target_kcal: 1400, target_water_ml: 2500, status: 'active', meals: [{ slot: 'الغداء', kcal: 500 }] } });
+  const r1 = await req('POST', '/api/cron/daily/run', { token: tk });
+  check('المهمة اليومية: تذكير موعد + تحفيز صباحي بالإشعار', r1.json?.push?.reminders >= 1 && r1.json?.push?.daily >= 1, JSON.stringify(r1.json?.push));
+  const r2 = await req('POST', '/api/cron/daily/run', { token: tk });
+  check('لا تكرار لإشعارات اليوم عند إعادة التشغيل', r2.json?.push?.reminders === 0 && r2.json?.push?.daily === 0, JSON.stringify(r2.json?.push));
+  const logC = await req('GET', `/api/whatsapp/log?patient_id=${E.id}`, { token: tk });
+  check('نص التحفيز يتضمن أهداف الخطة', (logC.json?.items || []).some((m) => m.kind === 'push_daily' && /1400 سعرة/.test(m.body) && /2\.5 لتر/.test(m.body)), JSON.stringify(logC.json?.items?.map((m) => m.body)));
+  await req('PUT', '/api/settings', { token: tk, body: { 'clinic.push_daily': false } });
+  check('إيقاف الإشعار الصباحي من الإعدادات', (await req('POST', '/api/cron/daily/run', { token: tk })).json?.push?.disabled === true);
   const off = await req('PUT', '/api/settings', { token: tk, body: { 'clinic.portal_enabled': false } });
   check('إيقاف البوابة من الإعدادات يمنع الدخول', off.status === 200 && (await req('POST', '/api/portal/auth/qr', { body: { token: accB.token } })).status === 403);
 } catch (e) {

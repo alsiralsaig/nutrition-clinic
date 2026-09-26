@@ -10,6 +10,8 @@ import {
   startCall, callFor, postSignal, pullSignals, endCall, iceServers,
 } from '../care.js';
 import { sendMessage } from '../whatsapp.js';
+import { pushToPatient, devicesFor, pushStatus } from '../push.js';
+import { str } from '../lib.js';
 
 export const router = Router();
 const pid = (req) => Number(req.params.id);
@@ -52,7 +54,7 @@ router.put('/patients/:id(\\d+)/habit-targets', canWrite(), wrap(async (req, res
 // ---------- بوابة المريض: رمز QR ----------
 router.get('/patients/:id(\\d+)/portal-access', wrap(async (req, res) => {
   await mustPatient(pid(req));
-  res.json({ ...(await accessStatus(pid(req))), portal_url: portalLink(publicUrl(req)) });
+  res.json({ ...(await accessStatus(pid(req))), portal_url: portalLink(publicUrl(req)), app_url: `${publicUrl(req)}/app`, push_devices: await devicesFor(pid(req)) });
 }));
 
 /** يصدر رمزاً جديداً (ويلغي القديم). الرمز يظهر مرة واحدة فقط — لا يُخزَّن إلا الـ hash */
@@ -64,6 +66,21 @@ router.post('/patients/:id(\\d+)/portal-access', canWrite(), wrap(async (req, re
 router.delete('/patients/:id(\\d+)/portal-access', canWrite(), wrap(async (req, res) => {
   await mustPatient(pid(req));
   res.json({ revoked: await revokeAccess(pid(req), req.user.id) });
+}));
+
+/** حالة إشعارات تطبيق المريض (للإعدادات) */
+router.get('/push/status', wrap(async (req, res) => res.json({ ...(await pushStatus()), app_url: `${publicUrl(req)}/app` })));
+
+/** إشعار مخصص من العيادة إلى تطبيق المريض */
+router.post('/patients/:id(\\d+)/push', canWrite(), wrap(async (req, res) => {
+  const p = await mustPatient(pid(req));
+  const title = str(req.body?.title, 120) || 'رسالة من العيادة';
+  const body = str(req.body?.body, 400);
+  if (!body) throw badRequest('نص الإشعار مطلوب');
+  const r = await pushToPatient(p.id, { title, body, kind: 'custom', url: '/#/portal', userId: req.user.id });
+  if (!r.devices) throw badRequest('المريض لم يفعّل إشعارات التطبيق على أي جهاز بعد');
+  await audit({ userId: req.user.id, action: 'push.custom', entity: 'patients', entityId: p.id, detail: { sent: r.sent } });
+  res.json(r);
 }));
 
 /** إرسال رابط الدخول بواتساب (يُصدر رمزاً جديداً لأن القديم غير محفوظ) */
@@ -133,12 +150,17 @@ router.post('/appointments/:id(\\d+)/call', canWrite(), wrap(async (req, res) =>
   const call = await startCall({ appointmentId: Number(req.params.id), userId: req.user.id });
   const join = portalLink(publicUrl(req), '/call');
   let message = null;
+  // إشعار فوري على جوال المريض (إن فعّل الإشعارات) — أولوية عالية، صالح 10 دقائق فقط
+  const push = await pushToPatient(call.patient_id, {
+    title: '📹 الأخصائي بانتظارك الآن', body: 'اضغط للانضمام إلى الاستشارة المرئية', url: '/#/portal/call',
+    kind: 'video_call', tag: `call-${call.id}`, refId: call.id, userId: req.user.id, urgency: 'high', ttl: 600,
+  });
   if (req.body?.notify) {
     const p = await db.get(`SELECT * FROM patients WHERE id=?`, call.patient_id);
     const text = `مرحباً ${p.first_name} 👋\nأخصائية التغذية بانتظارك الآن في الاستشارة المرئية.\nافتح بوابتك واضغط «انضم للمكالمة»:\n${join}`;
     message = await sendMessage({ patient: p, kind: 'video_call', text, refId: call.id, userId: req.user.id });
   }
-  res.status(201).json({ call: await callFor(call.id), ice_servers: iceServers(), join_url: join, message });
+  res.status(201).json({ call: await callFor(call.id), ice_servers: iceServers(), join_url: join, message, push });
 }));
 
 router.get('/calls/:id(\\d+)', wrap(async (req, res) => res.json({ call: await callFor(Number(req.params.id)), ice_servers: iceServers() })));

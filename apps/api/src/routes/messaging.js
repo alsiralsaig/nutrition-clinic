@@ -6,6 +6,7 @@ import { canWrite, adminOnly } from '../auth.js';
 import { waStatus, sendMessage, appointmentText, dailyText, planText, templateFor, normalizePhone, waLink } from '../whatsapp.js';
 import { dayIndex, buildShoppingList, shoppingListText } from '../nutrition.js';
 import { sweepOffers, cleanupCalls, publicUrl } from '../care.js';
+import { pushToPatient, dailyPushOn } from '../push.js';
 
 export const router = Router();
 
@@ -163,7 +164,7 @@ router.get('/notifications', wrap(async (req, res) => {
   const failed = await db.all(`
     SELECT ml.id, ml.kind, ml.error, ml.created_at, p.id AS patient_id, p.first_name, p.last_name FROM message_log ml
     LEFT JOIN patients p ON p.id = ml.patient_id
-    WHERE ml.status = 'failed' AND ml.created_at >= ? ORDER BY ml.id DESC LIMIT 5`, `${addDaysISO(today, -3)} 00:00:00`);
+    WHERE ml.status = 'failed' AND ml.channel <> 'push' AND ml.created_at >= ? ORDER BY ml.id DESC LIMIT 5`, `${addDaysISO(today, -3)} 00:00:00`);
   for (const f of failed) {
     items.push({ id: `msg-failed-${f.id}`, type: 'message_failed', level: 'high', title: `فشل إرسال واتساب${f.first_name ? `: ${f.first_name} ${f.last_name}` : ''}`,
       body: f.error || 'خطأ غير معروف', link: f.patient_id ? `/patients/${f.patient_id}` : '/settings', at: f.created_at });
@@ -223,7 +224,7 @@ export async function runDailyJob({ userId = null, source = 'cron' } = {}) {
     const pts = await db.all(`
       SELECT DISTINCT p.id FROM patients p JOIN diet_plans dp ON dp.patient_id = p.id AND dp.status = 'active'
       WHERE p.daily_reminder = 1 AND p.status = 'active'
-        AND NOT EXISTS (SELECT 1 FROM message_log ml WHERE ml.patient_id = p.id AND ml.kind = 'daily_reminder'
+        AND NOT EXISTS (SELECT 1 FROM message_log ml WHERE ml.patient_id = p.id AND ml.kind = 'daily_reminder' AND ml.channel = 'whatsapp'
                         AND ml.status = 'sent' AND ml.created_at >= ?)
       LIMIT 300`, `${today} 00:00:00`);
     for (const { id } of pts) {
@@ -235,10 +236,62 @@ export async function runDailyJob({ userId = null, source = 'cron' } = {}) {
       } catch { out.daily_reminders.skipped += 1; }
     }
   }
+  try { out.push = await dailyPush({ today, tomorrow, userId }); } catch (e) { out.push = { error: e.message }; }
   try { out.waitlist = await sweepOffers({ base: publicUrl(null) }); } catch (e) { out.waitlist = { error: e.message }; }
   try { out.calls = await cleanupCalls(); } catch (e) { out.calls = { error: e.message }; }
   out.finished_at = new Date().toISOString();
   await setSettings({ _cron_last_run: out });
+  return out;
+}
+
+/**
+ * إشعارات تطبيق المريض الصباحية (لمن فعّلها فقط، مجانية بلا واتساب):
+ *  1) تذكير بموعد اليوم/الغد — مرة واحدة لكل موعد في اليوم
+ *  2) وإلا: تحفيز صباحي بأهداف الخطة المعتمدة (السعرات والماء) — مرة واحدة يومياً
+ */
+/** تنفيذ متوازٍ محدود (المهمة اليومية محدودة بـ 30 ثانية على Vercel) */
+async function pool(items, n, fn) {
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(n, items.length) }, async () => { while (i < items.length) await fn(items[i++]); }));
+}
+
+async function dailyPush({ today, tomorrow, userId }) {
+  const out = { reminders: 0, daily: 0, failed: 0 };
+  if (!(await dailyPushOn())) return { ...out, disabled: true };
+  const since = `${today} 00:00:00`;
+  const reminded = new Set();
+  const appts = await db.all(`
+    SELECT a.id, a.patient_id, a.date, a.time, a.mode FROM appointments a JOIN patients p ON p.id = a.patient_id
+    WHERE a.date IN (?, ?) AND a.status IN ('scheduled','confirmed') AND p.status <> 'archived'
+      AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.patient_id = a.patient_id)
+      AND NOT EXISTS (SELECT 1 FROM message_log ml WHERE ml.channel = 'push' AND ml.kind = 'push_reminder' AND ml.ref_id = a.id
+                      AND ml.status = 'sent' AND ml.created_at >= ?)
+    ORDER BY a.date, a.time LIMIT 300`, today, tomorrow, since);
+  await pool(appts, 8, async (a) => {
+    const when = a.date === today ? 'اليوم' : 'غداً';
+    const r = await pushToPatient(a.patient_id, {
+      title: `⏰ تذكير: موعدك ${when} الساعة ${a.time}`, body: a.mode === 'video' ? 'استشارة مرئية — افتح التطبيق قبل الموعد بدقائق' : 'نراك في العيادة — لا تنسَ الحضور قبل الموعد بقليل',
+      url: '/#/portal/appointments', kind: 'push_reminder', tag: `rem-${a.id}`, refId: a.id, userId,
+    });
+    if (r.sent) { out.reminders += 1; reminded.add(a.patient_id); } else if (r.failed) out.failed += 1;
+  });
+  const pts = await db.all(`
+    SELECT p.id, p.first_name, p.water_target_ml, dp.target_kcal, dp.target_water_ml, dp.id AS plan_id FROM patients p
+    JOIN diet_plans dp ON dp.id = (SELECT MAX(id) FROM diet_plans WHERE patient_id = p.id AND status = 'active')
+    WHERE p.status = 'active' AND EXISTS (SELECT 1 FROM push_subscriptions s WHERE s.patient_id = p.id)
+      AND NOT EXISTS (SELECT 1 FROM message_log ml WHERE ml.patient_id = p.id AND ml.channel = 'push' AND ml.kind = 'push_daily'
+                      AND ml.status = 'sent' AND ml.created_at >= ?)
+    LIMIT 300`, since);
+  await pool(pts, 8, async (p) => {
+    if (reminded.has(p.id)) return; // إشعار واحد صباحاً يكفي
+    const water = p.target_water_ml || p.water_target_ml;
+    const goals = [p.target_kcal ? `${Math.round(p.target_kcal)} سعرة` : null, water ? `${+(water / 1000).toFixed(1)} لتر ماء` : null].filter(Boolean).join(' · ');
+    const r = await pushToPatient(p.id, {
+      title: `صباح الخير ${p.first_name} 🌿`, body: goals ? `هدفك اليوم: ${goals}. سجّل ماءك ونشاطك في التطبيق.` : 'افتح خطتك لليوم وسجّل ماءك ونشاطك.',
+      url: '/#/portal', kind: 'push_daily', tag: 'daily', refId: p.plan_id, userId,
+    });
+    if (r.sent) out.daily += 1; else if (r.failed) out.failed += 1;
+  });
   return out;
 }
 

@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 /** يرفع هذا الرقم عند أي تعديل على schema.sql كي تُطبَّق التعديلات على القواعد الموجودة */
-export const SCHEMA_VERSION = '6';
+export const SCHEMA_VERSION = '7';
 
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 export const DRIVER = DATABASE_URL ? 'postgres' : 'pglite';
@@ -229,6 +229,7 @@ export const DEFAULT_SETTINGS = [
   ['clinic.waitlist_enabled', true],         // عرض المواعيد الملغاة على قائمة الانتظار تلقائياً
   ['clinic.waitlist_offer_minutes', 120],    // مدة صلاحية العرض قبل انتقاله للتالي
   ['clinic.waitlist_batch', 3],              // عدد المرضى الذين يُعرض عليهم الموعد في آن واحد
+  ['clinic.push_daily', true],               // إشعار صباحي يومي لمن فعّل إشعارات تطبيق المريض
   ['clinic.printFooter', 'هذا التقرير صادر إلكترونياً من نظام إدارة العيادة ولا يُعتد به إلا معتمدًا من الإدارة.'],
 ];
 

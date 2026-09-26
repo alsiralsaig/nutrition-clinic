@@ -4,6 +4,7 @@ import { createHash, randomBytes, randomInt } from 'node:crypto';
 import { db, audit, getSetting, getSettings } from './db.js';
 import { badRequest, conflict, notFound, str, isDate, isTime, todayISO, nowTimeHM, addDaysISO, round } from './lib.js';
 import { sendMessage, normalizePhone, waLink } from './whatsapp.js';
+import { pushToPatient } from './push.js';
 
 const sha = (s) => createHash('sha256').update(String(s)).digest('hex');
 
@@ -53,6 +54,7 @@ export async function accessStatus(patientId) {
 
 export async function revokeAccess(patientId, userId) {
   const r = await db.run(`UPDATE patient_access SET revoked_at=to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS') WHERE patient_id=? AND revoked_at IS NULL`, patientId);
+  await db.run(`DELETE FROM push_subscriptions WHERE patient_id=?`, patientId); // إلغاء الوصول يوقف الإشعارات على أجهزته
   await audit({ userId, action: 'portal.revoke', entity: 'patients', entityId: patientId });
   return r.changes;
 }
@@ -282,6 +284,10 @@ export async function offerSlot({ date, time, duration = 30, sourceAppointmentId
     const text = `مرحباً ${e.first_name} 👋\nتوفر موعد في ${name}: ${date} الساعة ${time}.\nأنت في قائمة الانتظار — أول من يؤكد يحصل عليه.\n${link ? `للتأكيد من البوابة: ${link}\n` : ''}العرض صالح حتى ${expires.slice(11)} (${expires.slice(0, 10)}).`;
     const r = await sendMessage({ patient: e, kind: 'waitlist_offer', text, refId: id, userId });
     await db.run(`UPDATE waitlist_offers SET notify_status=? WHERE id=?`, r.status, id);
+    await pushToPatient(e.patient_id, {
+      title: '🗓️ توفر موعد لك الآن', body: `${date} الساعة ${time} — أول من يؤكد يحصل عليه. العرض حتى ${expires.slice(11)}`,
+      url: '/#/portal/appointments', kind: 'waitlist_offer', tag: `offer-${id}`, refId: id, userId, urgency: 'high',
+    });
     offers.push({ id, patient_id: e.patient_id, name: `${e.first_name} ${e.last_name}`, notify: r.status, link: r.link });
   }
   await audit({ userId, action: 'waitlist.offer', entity: 'waitlist_offers', detail: { date, time, patients: offers.map((o) => o.patient_id) } });

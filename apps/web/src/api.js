@@ -107,7 +107,11 @@ const PORTAL_KEY = 'clinic.portal';
 export const portalToken = {
   get: () => localStorage.getItem(PORTAL_KEY) || '',
   set: (t) => localStorage.setItem(PORTAL_KEY, t),
-  clear: () => localStorage.removeItem(PORTAL_KEY),
+  clear: () => {
+    localStorage.removeItem(PORTAL_KEY);
+    // نسخة البيانات المخزّنة للعرض دون اتصال تُمسح مع الخروج
+    try { navigator.serviceWorker?.controller?.postMessage({ type: 'portal-logout' }); } catch { /* تجاهل */ }
+  },
 };
 
 async function portalRequest(method, path, body) {
@@ -125,6 +129,7 @@ async function portalRequest(method, path, body) {
     window.dispatchEvent(new CustomEvent('clinic:portal-signed-out', { detail: payload?.error }));
   }
   if (!res.ok) throw new ApiError(payload?.error ? __t(payload.error) : `خطأ ${res.status}`, res.status, payload);
+  if (res.headers.get('x-offline') && payload && typeof payload === 'object') payload._offline = true; // من نسخة عامل الخدمة
   return currentLang() === 'en' ? translateLabels(payload) : payload;
 }
 
