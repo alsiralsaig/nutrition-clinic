@@ -46,6 +46,63 @@ function RequireToken({ children }) {
   return children;
 }
 
+/* ------------------------------------------------------------ تثبيت التطبيق (PWA) */
+function useInstallPrompt() {
+  const [evt, setEvt] = useState(null);
+  const [standalone, setStandalone] = useState(false);
+  useEffect(() => {
+    try {
+      setStandalone(window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches);
+    } catch { /* ignore */ }
+    const onBip = (e) => { e.preventDefault(); setEvt(e); };
+    const onInstalled = () => setEvt(null);
+    window.addEventListener('beforeinstallprompt', onBip);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => { window.removeEventListener('beforeinstallprompt', onBip); window.removeEventListener('appinstalled', onInstalled); };
+  }, []);
+  return { evt, standalone };
+}
+
+function InstallBanner({ onDone }) {
+  const { evt, standalone } = useInstallPrompt();
+  const [dismissed, setDismissed] = useState(() => !!localStorage.getItem('clinic_install_banner_dismissed'));
+  const [showHelp, setShowHelp] = useState(false);
+  if (standalone || dismissed) return null;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  const install = async () => {
+    if (!evt) return;
+    evt.prompt();
+    await evt.userChoice;
+    setEvt(null);
+    onDone?.();
+  };
+  return (
+    <div className="rounded-2xl border border-line bg-surface p-3 shadow-sm">
+      <div className="flex items-center gap-3">
+        <span className="text-[26px] leading-none">📲</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-extrabold">{isIOS ? 'اجعل بوابتك تطبيقًا على هاتفك' : 'ثبّت تطبيق العيادة على هاتفك'}</p>
+          <p className="muted text-[11.5px]">افتح برنامجك ومواعيدك مباشرةً من الشاشة الرئيسية</p>
+        </div>
+        {evt
+          ? <button className="btn-primary btn-sm shrink-0" onClick={install}>تثبيت</button>
+          : <button className="btn-primary btn-sm shrink-0" onClick={() => setShowHelp((s) => !s)}>كيف؟</button>}
+        <button className="btn-ghost btn-sm !px-2 shrink-0" title="إخفاء" aria-label="إخفاء"
+          onClick={() => { localStorage.setItem('clinic_install_banner_dismissed', '1'); setDismissed(true); }}>
+          <Icon.close />
+        </button>
+      </div>
+      {showHelp && !evt && (
+        <div className="mt-2.5 rounded-xl bg-sand p-3 text-[12px] leading-6">
+          {isIOS
+            ? <p><b>آيفون:</b> من سفاري اضغط زر المشاركة (المربع مع السهم لأعلى) ثم اختر «إضافة إلى الشاشة الرئيسية»</p>
+            : <p><b>أندرويد:</b> من قائمة المتصفح (⋮) اختر «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------ الدخول */
 function PortalLogin() {
   const [params] = useSearchParams();
@@ -196,6 +253,7 @@ function PortalHome() {
       </header>
 
       <div className="grid gap-3 px-4 pt-4">
+        <InstallBanner />
         {me.call && <CallBanner call={me.call} onJoin={() => nav('/portal/call')} />}
         {me.offers?.length > 0 && <OffersBanner offers={me.offers} onDone={load} toast={toast} />}
         {tab === 'today' && <TodayTab me={me} reload={load} toast={toast} />}
