@@ -1,110 +1,71 @@
-/* عامل خدمة تطبيق المريض: تثبيت · عمل دون اتصال · إشعارات
- * - التنقل: الشبكة أولاً، وعند انقطاعها الصفحة المخزّنة
- * - ملفات الواجهة (/assets/* بأسماء مُجزّأة): المخزّن أولاً
- * - /api/portal/me: الشبكة أولاً مع نسخة احتياطية لعرض الخطة والمواعيد دون إنترنت
- * - بقية /api لا تُخزَّن أبداً (بيانات الموظفين لا تُحفظ على الجهاز)
- */
-const VERSION = 'v1';
-const SHELL = `shell-${VERSION}`;
-const DATA = 'portal-data';
-const PRECACHE = ['/', '/index.html', '/app.webmanifest'];
+/* Service Worker — تطبيق المريض
+   الواجهة تُخزَّن للعمل دون اتصال؛ بيانات الـ API لا تُخزَّن أبداً (الحساسية للتحديثات) */
+const CACHE = "patient-app-v6";
+const SHELL = [
+  "./",
+  "./index.html",
+  "./styles.css",
+  "./app.js",
+  "./manifest.json",
+  "./icons/icon-180.png",
+  "./icons/icon-192.png",
+  "./icons/icon-512.png",
+  "./images/banner.jpg",
+  "./images/brand-band.jpg"
+];
 
-self.addEventListener('install', (e) => {
-  e.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)).catch(() => {}).then(() => self.skipWaiting()));
-});
+// Cache each shell file independently. Cache.addAll() rejects the entire
+// install if one request fails (for example, during a brief mobile-network
+// interruption), leaving the patient PWA's worker uninstalled.
+async function cacheShellFile(cache, path) {
+  const url = new URL(path, self.registration.scope);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url.href, { cache: "reload", signal: controller.signal });
+    if (response.ok && response.type !== "opaque") await cache.put(url.href, response);
+  } catch {
+    // The app remains usable online; a failed optional precache must not block install.
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
-self.addEventListener('activate', (e) => {
+self.addEventListener("install", (e) => {
   e.waitUntil((async () => {
-    for (const k of await caches.keys()) if (k.startsWith('shell-') && k !== SHELL) await caches.delete(k);
-    await self.clients.claim();
+    const cache = await caches.open(CACHE);
+    await Promise.all(SHELL.map((path) => cacheShellFile(cache, path)));
+    await self.skipWaiting();
   })());
 });
 
-self.addEventListener('message', (e) => {
-  if (e.data?.type === 'portal-logout') e.waitUntil(caches.delete(DATA));
-  if (e.data?.type === 'skip-waiting') self.skipWaiting();
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches.keys()
+      // Do not remove the clinic/admin app's caches on the shared domain.
+      .then((keys) => Promise.all(keys
+        .filter((k) => k.startsWith("patient-app-") && k !== CACHE)
+        .map((k) => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
 });
 
-self.addEventListener('fetch', (e) => {
-  const req = e.request;
-  if (req.method !== 'GET') return;
-  const url = new URL(req.url);
+self.addEventListener("fetch", (e) => {
+  if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
   if (url.origin !== self.location.origin) return;
+  /* كل طلبات الـ API تمر مباشرة (بدون تخزين) */
+  if (url.pathname.startsWith("/api/")) return;
 
-  if (req.mode === 'navigate') {
-    e.respondWith((async () => {
-      try {
-        const res = await fetch(req);
-        if (res.ok) { const c = await caches.open(SHELL); c.put('/index.html', res.clone()); }
-        return res;
-      } catch {
-        return (await caches.match('/index.html')) || (await caches.match('/')) || Response.error();
-      }
-    })());
-    return;
-  }
-
-  if (url.pathname.startsWith('/assets/') || url.pathname.startsWith('/icons/')) {
-    e.respondWith((async () => {
-      const hit = await caches.match(req);
-      if (hit) return hit;
-      const res = await fetch(req);
-      if (res.ok) (await caches.open(SHELL)).put(req, res.clone());
-      return res;
-    })());
-    return;
-  }
-
-  if (url.pathname === '/api/portal/me') {
-    e.respondWith((async () => {
-      const key = '/api/portal/me';
-      try {
-        const res = await fetch(req);
-        const c = await caches.open(DATA);
-        if (res.ok) c.put(key, res.clone());
-        else if (res.status === 401) c.delete(key);
-        return res;
-      } catch {
-        const hit = await caches.match(key, { cacheName: DATA });
-        if (!hit) throw new Error('offline');
-        const h = new Headers(hit.headers); h.set('X-Offline', '1');
-        return new Response(await hit.blob(), { status: 200, headers: h });
-      }
-    })());
-  }
-});
-
-// ---------------------------------------------------------------- الإشعارات
-self.addEventListener('push', (e) => {
-  let d = {};
-  try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data?.text() }; }
-  const title = d.title || 'عيادة التغذية';
-  e.waitUntil(self.registration.showNotification(title, {
-    body: d.body || '',
-    icon: 'https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/icon-192.png',
-    badge: 'https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/favicon-64.png',
-    tag: d.tag || undefined,
-    renotify: !!d.tag,
-    requireInteraction: d.kind === 'video_call',
-    vibrate: d.kind === 'video_call' ? [300, 150, 300, 150, 300] : [120, 60, 120],
-    dir: 'rtl',
-    lang: 'ar',
-    data: { url: d.url || '/#/portal' },
-  }));
-});
-
-self.addEventListener('notificationclick', (e) => {
-  e.notification.close();
-  const target = new URL(e.notification.data?.url || '/#/portal', self.location.origin).href;
-  e.waitUntil((async () => {
-    const wins = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const w of wins) {
-      if (new URL(w.url).origin === self.location.origin) {
-        await w.focus();
-        w.postMessage({ type: 'navigate', url: target });
-        return;
-      }
-    }
-    await self.clients.openWindow(target);
-  })());
+  e.respondWith(
+    caches.match(e.request).then(
+      (r) =>
+        r ||
+        fetch(e.request).then((r) => {
+          const cp = r.clone();
+          caches.open(CACHE).then((c) => c.put(e.request, cp));
+          return r;
+        })
+    )
+  );
 });
