@@ -344,3 +344,8 @@ ALTER TABLE patients ADD COLUMN IF NOT EXISTS allergies          TEXT;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS medications        TEXT;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS forbidden_foods    TEXT;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS blood_type         TEXT;
+
+-- المرحلة E: الألياف والماء في البرنامج الغذائي
+ALTER TABLE diet_plans ADD COLUMN IF NOT EXISTS target_fiber_g  DOUBLE PRECISION;
+ALTER TABLE diet_plans ADD COLUMN IF NOT EXISTS target_water_ml INTEGER;
+ALTER TABLE diet_meals ADD COLUMN IF NOT EXISTS fiber_g         DOUBLE PRECISION;

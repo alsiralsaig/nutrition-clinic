@@ -216,6 +216,7 @@ export function GeneratorModal({ open, onClose, patient, onSaved }) {
             <div className="grid gap-1.5 rounded-xl border border-brand-100 bg-brand-50/70 p-3 text-[12.5px]">
               {[['معدل الأيض الأساسي BMR', `${fmt(t.bmr, 0)} سعرة`], ['الاحتياج اليومي TDEE', `${fmt(t.tdee, 0)} سعرة`], ['الهدف اليومي', `${fmt(t.kcal, 0)} سعرة`],
                 ['بروتين / كربوهيدرات / دهون', `${t.protein_g} / ${t.carbs_g} / ${t.fat_g} غ`],
+                ...(t.fiber_g ? [['الألياف / الماء', `${t.fiber_g} غ / ${fmt(t.water_ml / 1000)} لتر`]] : []),
                 ['التغيّر المتوقع', `${t.weekly_change_kg > 0 ? '+' : ''}${fmt(t.weekly_change_kg, 2)} كغ/أسبوع`]].map(([l, v]) => (
                 <div key={l} className="flex items-baseline justify-between gap-2"><span className="font-bold text-ink/55">{l}</span><b className="tnum text-brand-800">{v}</b></div>
               ))}

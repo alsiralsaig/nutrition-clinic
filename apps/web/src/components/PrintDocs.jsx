@@ -173,6 +173,8 @@ export function PlanDoc({ plan, patient, clinic, measurements }) {
           ['بروتين', plan.target_protein_g ? `${fmt(plan.target_protein_g)} غ` : '—'],
           ['كربوهيدرات', plan.target_carbs_g ? `${fmt(plan.target_carbs_g)} غ` : '—'],
           ['دهون', plan.target_fat_g ? `${fmt(plan.target_fat_g)} غ` : '—'],
+          ['ألياف', plan.target_fiber_g ? `${fmt(plan.target_fiber_g, 0)} غ` : null],
+          ['الماء يومياً', plan.target_water_ml ? `${fmt(plan.target_water_ml / 1000)} لتر (≈ ${Math.round(plan.target_water_ml / 250)} كوب)` : null],
         ]} />
         {first && last && first.weight_kg && last.weight_kg && (
           <p className="mt-2 text-[11.5px] font-bold">قطع المشوار: {fmt(first.weight_kg - last.weight_kg)} كغ من أصل {fmt((patient.start_weight || 0) - (patient.goal_weight || 0))} كغ.</p>
@@ -185,13 +187,14 @@ export function PlanDoc({ plan, patient, clinic, measurements }) {
         const days = DAYS.map((name, d) => ({ name, d, meals: [...every, ...plan.meals.filter((m) => m.day_of_week === d)] }))
           .filter((x) => plan.meals.some((m) => m.day_of_week === x.d));
         const groups = days.length ? days : [{ name: 'الوجبات اليومية', d: null, meals: plan.meals }];
-        const sumOf = (ms) => ms.reduce((t, m) => ({ kcal: t.kcal + (m.kcal || 0), protein_g: t.protein_g + (m.protein_g || 0), carbs_g: t.carbs_g + (m.carbs_g || 0), fat_g: t.fat_g + (m.fat_g || 0) }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+        const sumOf = (ms) => ms.reduce((t, m) => ({ kcal: t.kcal + (m.kcal || 0), protein_g: t.protein_g + (m.protein_g || 0), carbs_g: t.carbs_g + (m.carbs_g || 0), fat_g: t.fat_g + (m.fat_g || 0), fiber_g: t.fiber_g + (m.fiber_g || 0) }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 });
+        const hasFiber = plan.meals.some((m) => m.fiber_g != null && m.fiber_g !== '');
         return groups.map((g) => {
           const t = days.length ? sumOf(g.meals) : totals;
           return (
             <DocSection key={g.name} title={days.length ? `يوم ${g.name}` : g.name}>
               <table className="keep">
-                <thead><tr>{['الوجبة', 'التوقيت', 'الأصناف', 'الكميات', 'سعرات', 'ب', 'ك', 'د'].map((h) => <th key={h}>{h}</th>)}</tr></thead>
+                <thead><tr>{['الوجبة', 'التوقيت', 'الأصناف', 'الكميات', 'سعرات', 'ب', 'ك', 'د', ...(hasFiber ? ['ألياف'] : [])].map((h) => <th key={h}>{h}</th>)}</tr></thead>
                 <tbody>
                   {g.meals.map((m) => (
                     <tr key={`${g.name}-${m.id}`}>
@@ -199,6 +202,7 @@ export function PlanDoc({ plan, patient, clinic, measurements }) {
                       <td>{m.title && m.items && m.title !== m.items ? <><b>{m.title}</b>: {m.items}</> : (m.items || m.title || '—')}</td><td>{m.portions || '—'}</td>
                       <td className="tnum">{fmt(m.kcal, 0)}</td><td className="tnum">{fmt(m.protein_g)}</td>
                       <td className="tnum">{fmt(m.carbs_g)}</td><td className="tnum">{fmt(m.fat_g)}</td>
+                      {hasFiber && <td className="tnum">{fmt(m.fiber_g)}</td>}
                     </tr>
                   ))}
                 </tbody>
@@ -209,6 +213,7 @@ export function PlanDoc({ plan, patient, clinic, measurements }) {
                     <td className="tnum font-extrabold">{fmt(t.protein_g)}</td>
                     <td className="tnum font-extrabold">{fmt(t.carbs_g)}</td>
                     <td className="tnum font-extrabold">{fmt(t.fat_g)}</td>
+                    {hasFiber && <td className="tnum font-extrabold">{fmt(t.fiber_g)}</td>}
                   </tr>
                 </tfoot>
               </table>

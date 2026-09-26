@@ -298,6 +298,7 @@ check('العودة للوضع الفاتح', !window.document.documentElement.c
   const title = q('#plan-form input')?.value || '';
   check('E: تطبيق برنامج كامل يستبدل الوجبات والعنوان', qa('#plan-form input[type="time"]').length === 4 && title.includes('التضخيم'), `rows=${qa('#plan-form input[type="time"]').length} title=${title}`);
   check('E: المجموع يطابق الهدف بعد تطبيق القالب', /2065|2,065/.test(q('.modal-footer, [role="dialog"]')?.textContent || text()));
+  check('E: القالب يملأ هدف الماء (4 لتر) ويحسب الألياف', q('[data-water-target]')?.value === '4' && /ألياف 25\.3/.test(q('[role="dialog"] footer')?.textContent || ''), `${q('[data-water-target]')?.value} | ${q('[role="dialog"] footer')?.textContent}`);
   await click(q('[data-undo-template]'), 600);
   check('E: زر التراجع يعيد الوجبات السابقة', qa('#plan-form input[type="time"]').length === before, `${qa('#plan-form input[type="time"]').length} vs ${before}`);
   const tuna = q('[data-meal-template="rmt-di-2"]');

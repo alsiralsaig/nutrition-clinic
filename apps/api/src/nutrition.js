@@ -81,8 +81,12 @@ export function computeTargets({ weight, height, age, gender, activity = 'light'
   if (gl === 'lose') protein = Math.max(protein, 1.2 * Math.min(weight, 120));
   const fat = (kcal * s.f) / 9;
   const carbs = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
+  // الألياف: 14 غ لكل 1000 سعرة (توصية IOM) بين 25 و38 غ · الماء: 35 مل/كغ بين 1.5 و4 لتر (+500 للنشيطين)
+  const fiber = Math.min(38, Math.max(25, Math.round((kcal / 1000) * 14)));
+  const water = Math.min(4000, Math.max(1500, Math.round((weight * 35 + (['active', 'very_active'].includes(act) ? 500 : 0)) / 250) * 250));
   return {
     bmr: r0(b), tdee: r0(tdee), kcal, protein_g: r0(protein), carbs_g: r0(carbs), fat_g: r0(fat),
+    fiber_g: fiber, water_ml: water,
     age: a, gender: g, activity: act, activity_factor: ACTIVITY[act].factor, goal: gl,
     floor_applied: clamped, weekly_change_kg: r1(((kcal - tdee) * 7) / 7700),
   };
@@ -140,6 +144,15 @@ export const FOODS = {
   honey: F('عسل', 'ملعقة صغيرة', 21, 0, 5.7, 0, 'other', 1),
 };
 
+// الألياف (غ) لكل وحدة أساس (100 غ/مل أو الحبة) — قيم USDA تقريبية
+export const FIBER = {
+  oats: 10.6, bread: 1.9, kisra: 1.5, rice: 0.4, pasta: 1.8, potato: 1.8, foul: 5.4, lentils: 7.9, chickpeas: 7.6,
+  chicken: 0, fish: 0, beef: 0, tuna: 0, egg: 0, cottage: 0, yogurt: 0, milk: 0,
+  dates: 0.7, banana: 3.1, apple: 4.4, guava: 3, orange: 3.1, mango: 1.6,
+  cucumber: 0.5, tomato: 1.2, greens: 1.8, mixed_veg: 4, okra: 3.2, molokhia: 2, carrot: 2.8,
+  olive_oil: 0, tahini: 1.4, peanut: 8.5, almonds: 12.5, honey: 0,
+};
+
 // ---------- قوالب الوجبات (كميات أساس تُكيَّف مع السعرات المستهدفة) ----------
 export const SLOTS = [
   { key: 'breakfast', slot: 'الفطور', time: '08:00', share: 0.25 },
@@ -187,7 +200,7 @@ export const MEALS = {
 const nutr = (key, qty) => {
   const f = FOODS[key];
   const k = qty / f.per;
-  return { kcal: f.kcal * k, p: f.p * k, c: f.c * k, f: f.f * k };
+  return { kcal: f.kcal * k, p: f.p * k, c: f.c * k, f: f.f * k, fb: (FIBER[key] || 0) * k };
 };
 const roundQty = (key, q) => {
   const f = FOODS[key];
@@ -206,8 +219,8 @@ export function scaleMeal(ingredients, targetKcal) {
     const qty = FOODS[k].fixed ? q : roundQty(k, q * factor);
     return { key: k, qty, ...nutr(k, qty) };
   });
-  const tot = items.reduce((s, x) => ({ kcal: s.kcal + x.kcal, p: s.p + x.p, c: s.c + x.c, f: s.f + x.f }), { kcal: 0, p: 0, c: 0, f: 0 });
-  return { items, kcal: r0(tot.kcal), protein_g: r1(tot.p), carbs_g: r1(tot.c), fat_g: r1(tot.f) };
+  const tot = items.reduce((s, x) => ({ kcal: s.kcal + x.kcal, p: s.p + x.p, c: s.c + x.c, f: s.f + x.f, fb: s.fb + x.fb }), { kcal: 0, p: 0, c: 0, f: 0, fb: 0 });
+  return { items, kcal: r0(tot.kcal), protein_g: r1(tot.p), carbs_g: r1(tot.c), fat_g: r1(tot.f), fiber_g: r1(tot.fb) };
 }
 
 /**
@@ -228,14 +241,14 @@ export function generateWeeklyPlan(targets, { days = 7, seed = 0 } = {}) {
         day_of_week: d, slot: s.slot, slot_time: s.time, title,
         items: m.items.map((x) => fmtQty(x.key, x.qty)).join('\n'),
         portions: m.items.map((x) => `${x.qty} ${FOODS[x.key].unit} ${FOODS[x.key].name}`).join('، '),
-        kcal: m.kcal, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g,
+        kcal: m.kcal, protein_g: m.protein_g, carbs_g: m.carbs_g, fat_g: m.fat_g, fiber_g: m.fiber_g,
         position: d * 10 + si,
       });
     });
   }
   const byDay = DAYS.slice(0, n).map((name, d) => {
     const ms = meals.filter((m) => m.day_of_week === d);
-    return { day: d, name, kcal: r0(ms.reduce((s, m) => s + m.kcal, 0)), protein_g: r0(ms.reduce((s, m) => s + m.protein_g, 0)) };
+    return { day: d, name, kcal: r0(ms.reduce((s, m) => s + m.kcal, 0)), protein_g: r0(ms.reduce((s, m) => s + m.protein_g, 0)), fiber_g: r1(ms.reduce((s, m) => s + m.fiber_g, 0)) };
   });
   return { meals, by_day: byDay };
 }
@@ -243,13 +256,14 @@ export function generateWeeklyPlan(targets, { days = 7, seed = 0 } = {}) {
 export function defaultAdvice(t) {
   const lines = [
     `الاحتياج اليومي المحسوب: ${t.kcal} سعرة (الأيض الأساسي ${t.bmr}، مع النشاط ${t.tdee}).`,
-    'اشرب 8–10 أكواب ماء يومياً، والكركديه أو الشاي بدون سكر مسموح.',
+    t.water_ml ? `اشرب ${r1(t.water_ml / 1000)} لتر ماء يومياً (حوالي ${Math.round(t.water_ml / 250)} كوباً)، والكركديه أو الشاي بدون سكر مسموح.` : 'اشرب 8–10 أكواب ماء يومياً، والكركديه أو الشاي بدون سكر مسموح.',
+    t.fiber_g ? `الألياف: ${t.fiber_g} غ يومياً على الأقل من الخضار والبقوليات والحبوب الكاملة.` : null,
     'قلّل السكر والمقليات والمشروبات الغازية، واستبدل الخبز الأبيض بالأسمر أو الكسرة.',
     'يمكن تبديل وجبة بأخرى من نفس الوقت في يوم آخر دون تغيير كبير في السعرات.',
   ];
   if (t.goal === 'lose') lines.splice(1, 0, `المتوقع: نزول حوالي ${Math.abs(t.weekly_change_kg)} كغ أسبوعياً مع الالتزام.`);
   if (t.floor_applied) lines.push('تنبيه: رُفعت السعرات إلى الحد الأدنى الآمن.');
-  return lines.join('\n');
+  return lines.filter(Boolean).join('\n');
 }
 
 // ---------- قائمة التسوق ----------

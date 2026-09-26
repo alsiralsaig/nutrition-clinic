@@ -28,6 +28,7 @@ function mealRow(m, i) {
     protein_g: toNum(m.protein_g),
     carbs_g: toNum(m.carbs_g),
     fat_g: toNum(m.fat_g),
+    fiber_g: toNum(m.fiber_g),
     position: Number.isFinite(Number(m.position)) ? Number(m.position) : i,
     // خطة أسبوعية: 0=السبت … 6=الجمعة، وبدونه = كل يوم
     day_of_week: m.day_of_week === null || m.day_of_week === undefined || m.day_of_week === ''
@@ -39,9 +40,26 @@ function mealRow(m, i) {
 }
 
 const INSERT_MEAL = `
-  INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, position, day_of_week)
-  VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @position, @day_of_week)`;
+  INSERT INTO diet_meals (plan_id, slot, slot_time, title, items, portions, kcal, protein_g, carbs_g, fat_g, fiber_g, position, day_of_week)
+  VALUES (@plan_id, @slot, @slot_time, @title, @items, @portions, @kcal, @protein_g, @carbs_g, @fat_g, @fiber_g, @position, @day_of_week)`;
 const MEAL_ORDER = 'ORDER BY day_of_week NULLS FIRST, position, id';
+
+/** هدف الماء بالمل (يقبل لترات إن كانت القيمة ≤ 10) — بين 500 و8000 */
+function waterMl(v) {
+  let n = toNum(v);
+  if (n === null) return null;
+  if (n > 0 && n <= 10) n *= 1000;
+  if (n < 500 || n > 8000) throw badRequest('هدف الماء غير منطقي (0.5–8 لتر)');
+  return Math.round(n);
+}
+
+/** الخطة المعتمدة تحدد هدف الماء اليومي في متتبع العادات (بوابة المريض) */
+async function syncWaterTarget(planId) {
+  const p = await db.get(`SELECT patient_id, status, target_water_ml FROM diet_plans WHERE id=?`, planId);
+  if (p?.status === 'active' && p.target_water_ml) {
+    await db.run(`UPDATE patients SET water_target_ml=?, updated_at=${NOW} WHERE id=?`, p.target_water_ml, p.patient_id);
+  }
+}
 
 async function loadPlan(id) {
   const plan = await db.get(`SELECT * FROM diet_plans WHERE id = ?`, id);
@@ -67,7 +85,8 @@ export function weeklyInfo(meals) {
     return { day: d, name, ...t };
   }).filter((x) => meals.some((m) => m.day_of_week === x.day) || every.length);
   const avg = (k) => Math.round(by_day.reduce((s, d) => s + (d[k] || 0), 0) / (by_day.length || 1));
-  return { weekly: true, by_day, daily_average: { kcal: avg('kcal'), protein_g: avg('protein_g'), carbs_g: avg('carbs_g'), fat_g: avg('fat_g') } };
+  const avg1 = (k) => Math.round((by_day.reduce((s, d) => s + (d[k] || 0), 0) / (by_day.length || 1)) * 10) / 10;
+  return { weekly: true, by_day, daily_average: { kcal: avg('kcal'), protein_g: avg('protein_g'), carbs_g: avg('carbs_g'), fat_g: avg('fat_g'), fiber_g: avg1('fiber_g') } };
 }
 
 async function patientBasics(patientId) {
@@ -126,10 +145,10 @@ router.post('/generate', canWrite(), wrap(async (req, res) => {
   const newId = await db.tx(async () => {
     const planId = await db.insert(`
       INSERT INTO diet_plans (patient_id, title, start_date, target_kcal, target_protein_g, target_carbs_g,
-        target_fat_g, advice, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`,
+        target_fat_g, target_fiber_g, target_water_ml, advice, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)`,
     patientId, title, isDate(String(b.start_date || '')) ? b.start_date : todayISO(), targets.kcal, targets.protein_g,
-    targets.carbs_g, targets.fat_g, advice, req.user.id);
+    targets.carbs_g, targets.fat_g, targets.fiber_g, targets.water_ml, advice, req.user.id);
     for (const m of meals) await db.run(INSERT_MEAL, { ...m, plan_id: planId });
     if (b.activity_level && ACTIVITY[b.activity_level] && p.activity_level !== b.activity_level) {
       await db.run(`UPDATE patients SET activity_level=?, updated_at=${NOW} WHERE id=?`, b.activity_level, patientId);
@@ -162,9 +181,9 @@ router.post('/', canWrite(), wrap(async (req, res) => {
   const newId = await db.tx(async () => {
     const planId = await db.insert(`
       INSERT INTO diet_plans (patient_id, title, start_date, end_date, target_kcal, target_protein_g,
-        target_carbs_g, target_fat_g, advice, status, created_by)
+        target_carbs_g, target_fat_g, target_fiber_g, target_water_ml, advice, status, created_by)
       VALUES (@patient_id, @title, @start_date, @end_date, @target_kcal, @target_protein_g,
-        @target_carbs_g, @target_fat_g, @advice, @status, @created_by)
+        @target_carbs_g, @target_fat_g, @target_fiber_g, @target_water_ml, @advice, @status, @created_by)
     `, {
       patient_id: patientId,
       title,
@@ -174,6 +193,8 @@ router.post('/', canWrite(), wrap(async (req, res) => {
       target_protein_g: toNum(req.body.target_protein_g),
       target_carbs_g: toNum(req.body.target_carbs_g),
       target_fat_g: toNum(req.body.target_fat_g),
+      target_fiber_g: toNum(req.body.target_fiber_g),
+      target_water_ml: waterMl(req.body.target_water_ml),
       advice: str(req.body.advice, 4000),
       status: ['draft', 'active', 'archived'].includes(req.body.status) ? req.body.status : 'draft',
       created_by: req.user.id,
@@ -181,6 +202,7 @@ router.post('/', canWrite(), wrap(async (req, res) => {
     for (const m of meals) await db.run(INSERT_MEAL, { ...m, plan_id: planId });
     return planId;
   });
+  await syncWaterTarget(newId);
   await audit({ userId: req.user.id, action: 'plan.create', entity: 'diet_plans', entityId: newId });
   res.status(201).json(await loadPlan(newId));
 }));
@@ -196,7 +218,8 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
     await db.run(`
       UPDATE diet_plans SET title=@title, start_date=@start_date, end_date=@end_date,
         target_kcal=@target_kcal, target_protein_g=@target_protein_g, target_carbs_g=@target_carbs_g,
-        target_fat_g=@target_fat_g, advice=@advice, status=@status, updated_at=${NOW}
+        target_fat_g=@target_fat_g, target_fiber_g=@target_fiber_g, target_water_ml=@target_water_ml,
+        advice=@advice, status=@status, updated_at=${NOW}
       WHERE id=@id
     `, {
       id,
@@ -207,6 +230,8 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
       target_protein_g: req.body.target_protein_g !== undefined ? toNum(req.body.target_protein_g) : plan.target_protein_g,
       target_carbs_g: req.body.target_carbs_g !== undefined ? toNum(req.body.target_carbs_g) : plan.target_carbs_g,
       target_fat_g: req.body.target_fat_g !== undefined ? toNum(req.body.target_fat_g) : plan.target_fat_g,
+      target_fiber_g: req.body.target_fiber_g !== undefined ? toNum(req.body.target_fiber_g) : plan.target_fiber_g,
+      target_water_ml: req.body.target_water_ml !== undefined ? waterMl(req.body.target_water_ml) : plan.target_water_ml,
       advice: req.body.advice !== undefined ? str(req.body.advice, 4000) : plan.advice,
       status: ['draft', 'active', 'archived'].includes(req.body.status) ? req.body.status : plan.status,
     });
@@ -215,6 +240,7 @@ router.put('/:id(\\d+)', canWrite(), wrap(async (req, res) => {
       for (const m of newMeals) await db.run(INSERT_MEAL, { ...m, plan_id: id });
     }
   });
+  await syncWaterTarget(id);
   await audit({ userId: req.user.id, action: 'plan.update', entity: 'diet_plans', entityId: id });
   res.json(await loadPlan(id));
 }));
@@ -228,6 +254,7 @@ router.post('/:id(\\d+)/activate', canWrite(), wrap(async (req, res) => {
     await db.run(`UPDATE diet_plans SET status='archived' WHERE patient_id=? AND status='active' AND id<>?`, plan.patient_id, id);
     await db.run(`UPDATE diet_plans SET status='active', updated_at=${NOW} WHERE id=?`, id);
   });
+  await syncWaterTarget(id);
   await audit({ userId: req.user.id, action: 'plan.activate', entity: 'diet_plans', entityId: id });
   res.json(await loadPlan(id));
 }));
@@ -243,12 +270,12 @@ router.post('/:id(\\d+)/duplicate', canWrite(), wrap(async (req, res) => {
   const newId = await db.tx(async () => {
     const planId = await db.insert(`
       INSERT INTO diet_plans (patient_id, title, start_date, end_date, target_kcal, target_protein_g,
-        target_carbs_g, target_fat_g, advice, status, created_by)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
+        target_carbs_g, target_fat_g, target_fiber_g, target_water_ml, advice, status, created_by)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?)
     `,
       targetPatient,
       `${plan.title} — نسخة`, plan.start_date, plan.end_date, plan.target_kcal, plan.target_protein_g,
-      plan.target_carbs_g, plan.target_fat_g, plan.advice, req.user.id,
+      plan.target_carbs_g, plan.target_fat_g, plan.target_fiber_g, plan.target_water_ml, plan.advice, req.user.id,
     );
     for (const m of meals) await db.run(INSERT_MEAL, { ...m, plan_id: planId });
     return planId;
@@ -283,10 +310,16 @@ const FOODS = {
   'زيت زيتون ملعقة': { g: 14, kcal: 119, p: 0, c: 0, f: 13.5 },
   'مكسرات 30غ': { g: 30, kcal: 173, p: 5, c: 6, f: 15 },
 };
+// الألياف لكل حصة من الحاسبة أعلاه (غ)
+const FOOD_FIBER = {
+  'خبز أسمر شريحة': 1.9, 'أرز مطبوخ كوب': 0.6, 'مكرونة مطبوخة كوب': 2.5, 'عدس مطبوخ كوب': 15.6, 'فول مدمس كوب': 14,
+  'صدر دجاج مشوي 100غ': 0, 'سمك مشوي 100غ': 0, 'لحم أحمر 100غ': 0, 'بيضة مسلوقة': 0, 'زبادي طبيعي كوب': 0,
+  'جبن قريش 100غ': 0, 'خضار ورقية كوب': 0.6, 'فاكهة حبة وسط': 3, 'زيت زيتون ملعقة': 0, 'مكسرات 30غ': 3.5,
+};
 router.get('/foods/lookup', wrap((req, res) => {
   const q = String(req.query.q || '').trim();
   const items = Object.entries(FOODS)
     .filter(([k]) => !q || k.includes(q))
-    .map(([name, v]) => ({ name, ...v }));
+    .map(([name, v]) => ({ name, ...v, fb: FOOD_FIBER[name] ?? 0 }));
   res.json({ items });
 }));

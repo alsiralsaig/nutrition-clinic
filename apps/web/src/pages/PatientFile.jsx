@@ -383,6 +383,25 @@ export default function PatientFile() {
                 ))}
               </div>
               {data.active_plan && <div className="lg:col-span-2"><MacroBar totals={data.active_plan.totals} target={data.active_plan.target_kcal} /></div>}
+              {data.active_plan && (data.active_plan.target_water_ml || data.active_plan.target_fiber_g || data.active_plan.totals?.fiber_g > 0) && (
+                <div className="flex flex-wrap gap-2 lg:col-span-2" data-plan-water-fiber>
+                  {data.active_plan.target_water_ml > 0 && (
+                    <span className="rounded-lg border border-brand-100 bg-brand-50 px-2.5 py-1 text-[12px] font-bold text-brand-700">
+                      {`💧 الماء: ${fmt(data.active_plan.target_water_ml / 1000)} لتر/يوم (≈ ${Math.round(data.active_plan.target_water_ml / 250)} كوب)`}
+                    </span>
+                  )}
+                  {(data.active_plan.target_fiber_g > 0 || data.active_plan.totals?.fiber_g > 0) && (() => {
+                    const got = Number(data.active_plan.totals?.fiber_g) || 0;
+                    const goal = Number(data.active_plan.target_fiber_g) || 0;
+                    const low = goal > 0 && got < goal * 0.9;
+                    return (
+                      <span className={`rounded-lg border px-2.5 py-1 text-[12px] font-bold ${low ? 'border-sun-100 bg-sun-50 text-sun-600' : 'border-leaf-100 bg-leaf-50 text-leaf-600'}`}>
+                        {goal ? `🌾 الألياف: ${fmt(got, 0)} من ${fmt(goal, 0)} غ` : `🌾 الألياف: ${fmt(got, 0)} غ`}{low ? ' — أقل من الهدف' : ''}
+                      </span>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
           )}
         </Card>
@@ -540,7 +559,7 @@ function PlanView({ plan }) {
           })}
         </div>
       )}
-      {sel.weekly && plan.daily_average && <p className="muted tnum">متوسط اليوم: {fmt(plan.daily_average.kcal, 0)} سعرة · ب {plan.daily_average.protein_g} · ك {plan.daily_average.carbs_g} · د {plan.daily_average.fat_g} غ</p>}
+      {sel.weekly && plan.daily_average && <p className="muted tnum">متوسط اليوم: {fmt(plan.daily_average.kcal, 0)} سعرة · ب {plan.daily_average.protein_g} · ك {plan.daily_average.carbs_g} · د {plan.daily_average.fat_g} · ألياف {fmt(plan.daily_average.fiber_g)} غ</p>}
       {sel.meals.map((m) => (
         <div key={m.id} className="flex items-start gap-3 rounded-xl border border-line bg-sand/50 p-3">
           <span className="grid h-10 w-14 shrink-0 place-items-center rounded-lg bg-surface text-center shadow-card">
@@ -557,6 +576,7 @@ function PlanView({ plan }) {
           <div className="tnum shrink-0 text-end text-[11.5px] font-bold text-ink/55">
             <p className="text-[14px] font-extrabold text-brand-700">{fmt(m.kcal, 0)}<span className="text-[10px]"> سعرة</span></p>
             <p>ب {fmt(m.protein_g)} · ك {fmt(m.carbs_g)} · د {fmt(m.fat_g)}</p>
+            {m.fiber_g > 0 && <p className="text-leaf-600">ألياف {fmt(m.fiber_g)} غ</p>}
           </div>
         </div>
       ))}

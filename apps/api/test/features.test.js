@@ -274,6 +274,25 @@ try {
   check('التحديث الجزئي لا يمسح الحساسية', medPart.json?.allergies === 'لاكتوز، فول سوداني' && medPart.json?.notes === 'تحديث جزئي');
   const medFile = await req('GET', `/api/patients/${med.json.id}/profile`, { token: tk });
   check('الملف الشامل يعرض التاريخ الطبي', (medFile.json?.patient?.allergies || medFile.json?.allergies) === 'لاكتوز، فول سوداني', `status ${medFile.status}`);
+
+  // ---------- المرحلة E: الألياف والماء ----------
+  const gprev = await req('POST', '/api/diet-plans/generate', { token: tk, body: { patient_id: 1 } });
+  check('الاحتياج المحسوب يشمل الألياف والماء', gprev.json?.targets?.fiber_g >= 25 && gprev.json?.targets?.water_ml >= 1500, JSON.stringify(gprev.json?.targets));
+  check('الخطة المولَّدة تحسب ألياف كل وجبة', gprev.json?.meals?.every((m) => typeof m.fiber_g === 'number') && gprev.json.meals.some((m) => m.fiber_g > 0));
+  check('نص التعليمات يذكر كمية الماء', /لتر ماء/.test(gprev.json?.advice || ''));
+  const fp = await req('POST', '/api/diet-plans', { token: tk, body: {
+    patient_id: med.json.id, title: 'خطة ألياف', target_kcal: 1500, target_fiber_g: 30, target_water_ml: 2.5, status: 'active',
+    meals: [{ slot: 'الفطور', kcal: 300, fiber_g: 7.5 }, { slot: 'الغداء', kcal: 600, fiber_g: 9.25 }] } });
+  check('حفظ هدف الألياف والماء (اللترات تتحول لمل)', fp.status === 201 && fp.json?.target_fiber_g === 30 && fp.json?.target_water_ml === 2500, JSON.stringify({ s: fp.status, f: fp.json?.target_fiber_g, w: fp.json?.target_water_ml }));
+  check('مجموع الألياف يُحسب في الخادم', fp.json?.totals?.fiber_g === 16.8, JSON.stringify(fp.json?.totals));
+  const medAfter = await req('GET', `/api/patients/${med.json.id}`, { token: tk });
+  check('اعتماد البرنامج يحدّث هدف الماء في متتبع العادات', medAfter.json?.water_target_ml === 2500, String(medAfter.json?.water_target_ml));
+  const badWater = await req('PUT', `/api/diet-plans/${fp.json.id}`, { token: tk, body: { target_water_ml: 20000 } });
+  check('هدف ماء غير منطقي يُرفض', badWater.status === 400);
+  const dup = await req('POST', `/api/diet-plans/${fp.json.id}/duplicate`, { token: tk, body: {} });
+  check('نسخ الخطة يحفظ الألياف والماء', dup.json?.target_water_ml === 2500 && dup.json?.meals?.[1]?.fiber_g === 9.25);
+  const lkF = await req('GET', `/api/diet-plans/foods/lookup?q=${encodeURIComponent('عدس')}`, { token: tk });
+  check('حاسبة الأغذية تعيد الألياف', lkF.json?.items?.[0]?.fb > 10);
 } catch (e) {
   failures++;
   console.error('EXCEPTION', e, serverLog.slice(-800));

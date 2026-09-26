@@ -290,14 +290,14 @@ export function PaymentForm({ open, onClose, patient, defaultDate, payment, onSa
 }
 
 /* ============================ محرر البرنامج الغذائي ============================ */
-const emptyMeal = (slot, i) => ({ slot, slot_time: ['08:00', '11:00', '14:00', '17:00', '20:00'][i] || '', title: '', items: '', portions: '', kcal: '', protein_g: '', carbs_g: '', fat_g: '' });
+const emptyMeal = (slot, i) => ({ slot, slot_time: ['08:00', '11:00', '14:00', '17:00', '20:00'][i] || '', title: '', items: '', portions: '', kcal: '', protein_g: '', carbs_g: '', fat_g: '', fiber_g: '' });
 
 export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
   const { run, toast } = useApp();
   const [busy, setBusy] = useState(false);
   const [meta, setMeta] = useState({
     title: '', start_date: '', end_date: '', target_kcal: '', target_protein_g: '', target_carbs_g: '',
-    target_fat_g: '', advice: '', status: 'draft',
+    target_fat_g: '', target_fiber_g: '', water_l: '', advice: '', status: 'draft',
   });
   const [meals, setMeals] = useState([]);
   const [foods, setFoods] = useState([]);
@@ -309,15 +309,16 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
     setMeta(plan ? {
       title: plan.title, start_date: plan.start_date || todayISO(), end_date: plan.end_date || '',
       target_kcal: plan.target_kcal ?? '', target_protein_g: plan.target_protein_g ?? '', target_carbs_g: plan.target_carbs_g ?? '',
-      target_fat_g: plan.target_fat_g ?? '', advice: plan.advice || '', status: plan.status,
+      target_fat_g: plan.target_fat_g ?? '', target_fiber_g: plan.target_fiber_g ?? '',
+      water_l: plan.target_water_ml ? plan.target_water_ml / 1000 : '', advice: plan.advice || '', status: plan.status,
     } : {
       title: 'برنامج غذائي جديد', start_date: todayISO(), end_date: '', target_kcal: 1800, target_protein_g: 120,
-      target_carbs_g: 170, target_fat_g: 55, advice: 'شرب 2–3 لتر ماء يومياً · النوم 7 ساعات · لا حذف للوجبات.', status: 'draft',
+      target_carbs_g: 170, target_fat_g: 55, target_fiber_g: 25, water_l: 2.5, advice: 'شرب 2–3 لتر ماء يومياً · النوم 7 ساعات · لا حذف للوجبات.', status: 'draft',
     });
     setMeals(plan?.meals?.length
       ? plan.meals.map((m) => ({
         ...m,
-        ...Object.fromEntries(['kcal', 'protein_g', 'carbs_g', 'fat_g'].map((k) => [k, m[k] ?? ''])),
+        ...Object.fromEntries(['kcal', 'protein_g', 'carbs_g', 'fat_g', 'fiber_g'].map((k) => [k, m[k] ?? ''])),
         slot_time: m.slot_time ?? '', title: m.title ?? '', items: m.items ?? '', portions: m.portions ?? '',
         day_of_week: m.day_of_week ?? '',
       }))
@@ -332,7 +333,8 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
   const sum = (list) => list.reduce((t, m) => ({
     kcal: t.kcal + (Number(m.kcal) || 0), protein_g: t.protein_g + (Number(m.protein_g) || 0),
     carbs_g: t.carbs_g + (Number(m.carbs_g) || 0), fat_g: t.fat_g + (Number(m.fat_g) || 0),
-  }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 });
+    fiber_g: t.fiber_g + (Number(m.fiber_g) || 0),
+  }), { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 });
   const isEvery = (m) => m.day_of_week === '' || m.day_of_week === null || m.day_of_week === undefined;
   const totals = useMemo(() => {
     if (!weekly) return sum(meals);
@@ -341,7 +343,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
     const used = [...new Set(meals.filter((m) => !isEvery(m)).map((m) => String(m.day_of_week)))];
     const per = used.map((d) => sum([...every, ...meals.filter((m) => String(m.day_of_week) === d)]));
     const avg = (k) => per.reduce((t, x) => t + x[k], 0) / (per.length || 1);
-    return { kcal: avg('kcal'), protein_g: avg('protein_g'), carbs_g: avg('carbs_g'), fat_g: avg('fat_g') };
+    return { kcal: avg('kcal'), protein_g: avg('protein_g'), carbs_g: avg('carbs_g'), fat_g: avg('fat_g'), fiber_g: avg('fiber_g') };
   }, [meals, weekly, dayView]); // eslint-disable-line
   const visible = meals.map((m, i) => [m, i]).filter(([m]) => dayView === 'all' || (dayView === 'every' ? isEvery(m) : (isEvery(m) || String(m.day_of_week) === dayView)));
   const dayCounts = DAYS.map((_, d) => meals.filter((m) => String(m.day_of_week) === String(d)).length);
@@ -358,6 +360,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
     setMeals((ms) => ms.map((m, j) => (j === i ? {
       ...m, kcal: (Number(m.kcal) || 0) + f.kcal, protein_g: round1((Number(m.protein_g) || 0) + f.p),
       carbs_g: round1((Number(m.carbs_g) || 0) + f.c), fat_g: round1((Number(m.fat_g) || 0) + f.f),
+      fiber_g: round1((Number(m.fiber_g) || 0) + (f.fb || 0)),
       items: [m.items, f.name].filter(Boolean).join(' + '), portions: [m.portions, `${f.g}غ`].filter(Boolean).join(' / '),
     } : m)));
     toast(`أُضيف ${f.name} للوجبة`, 'good', 1800);
@@ -369,13 +372,14 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
   const conflicts = [...new Set(meals.flatMap(conflictsOf))];
   const toRow = (t, i) => ({
     ...emptyMeal(t.slot, i), slot_time: t.slot_time, title: t.title, items: t.items, portions: t.portions,
-    kcal: t.kcal, protein_g: t.protein_g, carbs_g: t.carbs_g, fat_g: t.fat_g,
+    kcal: t.kcal, protein_g: t.protein_g, carbs_g: t.carbs_g, fat_g: t.fat_g, fiber_g: t.fiber_g ?? '',
   });
   const applyDiet = (d) => {
     setUndo({ meta, meals, dayView });
     setMeta((mt) => ({
       ...mt, title: tName(d), target_kcal: d.target_kcal, target_protein_g: d.target_protein_g,
       target_carbs_g: d.target_carbs_g, target_fat_g: d.target_fat_g, advice: d.advice,
+      target_fiber_g: d.target_fiber_g ?? mt.target_fiber_g, water_l: d.target_water_ml ? d.target_water_ml / 1000 : mt.water_l,
     }));
     setMeals(d.meals.map(toRow));
     setDayView('all');
@@ -394,10 +398,12 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
       ...meta, patient_id: patient.id,
       target_kcal: toNumOrNull(meta.target_kcal), target_protein_g: toNumOrNull(meta.target_protein_g),
       target_carbs_g: toNumOrNull(meta.target_carbs_g), target_fat_g: toNumOrNull(meta.target_fat_g),
+      target_fiber_g: toNumOrNull(meta.target_fiber_g),
+      target_water_ml: meta.water_l === '' || meta.water_l == null ? null : Math.round(Number(meta.water_l) * 1000),
       meals: meals.map((m, i) => ({
         slot: m.slot, slot_time: m.slot_time || null, title: m.title || null, items: m.items || null,
         portions: m.portions || null, kcal: toNumOrNull(m.kcal), protein_g: toNumOrNull(m.protein_g),
-        carbs_g: toNumOrNull(m.carbs_g), fat_g: toNumOrNull(m.fat_g), position: i,
+        carbs_g: toNumOrNull(m.carbs_g), fat_g: toNumOrNull(m.fat_g), fiber_g: toNumOrNull(m.fiber_g), position: i,
         day_of_week: isEvery(m) ? null : Number(m.day_of_week),
       })),
     };
@@ -409,9 +415,9 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
   };
 
   const rows = [
-    ['السعرات', 'kcal', ''], ['بروتين', 'protein_g', 'غ'], ['كربوهيدرات', 'carbs_g', 'غ'], ['دهون', 'fat_g', 'غ'],
+    ['السعرات', 'kcal', ''], ['بروتين', 'protein_g', 'غ'], ['كربوهيدرات', 'carbs_g', 'غ'], ['دهون', 'fat_g', 'غ'], ['ألياف', 'fiber_g', 'غ'],
   ];
-  const inputs = ['target_kcal', 'target_protein_g', 'target_carbs_g', 'target_fat_g'];
+  const inputs = ['target_kcal', 'target_protein_g', 'target_carbs_g', 'target_fat_g', 'target_fiber_g'];
 
   return (
     <Modal open={open} onClose={onClose} size="xl" icon={<Icon.meal />}
@@ -420,7 +426,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
       footer={<>
         <span className="me-auto flex items-center gap-2 text-[12px] font-bold text-ink/55">
           {weekly ? (dayView === 'all' || dayView === 'every' ? 'متوسط اليوم:' : `مجموع ${DAYS[Number(dayView)]}:`) : 'المجموع:'} <b className="tnum text-brand-700">{fmt(totals.kcal, 0)}</b> سعرة ·
-          ب {fmt(totals.protein_g)} · ك {fmt(totals.carbs_g)} · د {fmt(totals.fat_g)} غ
+          ب {fmt(totals.protein_g)} · ك {fmt(totals.carbs_g)} · د {fmt(totals.fat_g)} · ألياف {fmt(totals.fiber_g)} غ
         </span>
         <button className="btn-ghost" onClick={onClose}>إلغاء</button>
         <button form="plan-form" className="btn-primary" disabled={busy || !meta.title}>{busy ? 'جارٍ الحفظ…' : <><Icon.check /> حفظ البرنامج</>}</button>
@@ -499,6 +505,9 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
               </React.Fragment>
             );
           })}
+          <Field label="هدف الماء (لتر/يوم)" className="lg:col-span-3" hint={meta.water_l ? `≈ ${Math.round(Number(meta.water_l) * 4)} كوب · يُحدِّث هدف الماء في بوابة المريض عند اعتماد البرنامج` : 'يُحدِّث هدف الماء في بوابة المريض عند اعتماد البرنامج'}>
+            <Input type="number" step="0.25" min="0.5" max="8" value={meta.water_l} onChange={(e) => setMeta({ ...meta, water_l: e.target.value })} data-water-target />
+          </Field>
         </div>
 
         <div className="flex flex-wrap items-center gap-1" data-day-filter>
@@ -513,7 +522,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
 
         <div className="grid gap-2.5">
           {visible.map(([m, i]) => (
-            <div key={i} className="grid gap-2.5 rounded-xl border border-line bg-surface p-3 shadow-card lg:grid-cols-[150px_88px_1fr_1fr_1fr_repeat(4,78px)_auto] lg:items-end">
+            <div key={i} className="grid gap-2.5 rounded-xl border border-line bg-surface p-3 shadow-card lg:grid-cols-[150px_88px_1fr_1fr_1fr_repeat(5,70px)_auto] lg:items-end">
               <div className="grid gap-1.5">
                 <Field label="الوجبة"><Select value={m.slot} onChange={setM(i, 'slot')}>{!MEAL_SLOTS.includes(m.slot) && m.slot && <option value={m.slot}>{__t(m.slot)}</option>}{MEAL_SLOTS.map((s) => <option key={s} value={s}>{__t(s)}</option>)}</Select></Field>
                 <Select value={m.day_of_week == null ? '' : String(m.day_of_week)} onChange={setM(i, 'day_of_week')} className="!py-1.5 text-[12px]" aria-label="اليوم">
@@ -532,7 +541,7 @@ export function PlanEditor({ open, onClose, patient, plan, onSaved }) {
                 <button type="button" title="حذف الوجبة" className="btn-danger btn-sm !px-2" onClick={() => setMeals((ms) => ms.filter((_, j) => j !== i))}><Icon.trash /></button>
                 <button type="button" title="إضافة وجبة" className="btn-ghost btn-sm !px-2" onClick={() => setMeals((ms) => [...ms, { ...emptyMeal(MEAL_SLOTS[3], ms.length), day_of_week: /^\d$/.test(dayView) ? dayView : m.day_of_week ?? '' }])}><Icon.plus /></button>
               </div>
-              <details className="lg:col-span-9">
+              <details className="lg:col-span-10">
                 <summary className="cursor-pointer text-[11.5px] font-bold text-brand-700">إضافة من جدول الأغذية (تحسب السعرات والماكرو)</summary>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <Input placeholder="ابحث: أرز، دجاج، خبز…" onChange={(e) => lookup(e.target.value)} className="!w-56 !py-1.5 !text-[12.5px]" />

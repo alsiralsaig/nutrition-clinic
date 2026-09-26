@@ -434,11 +434,30 @@ function PlanTab({ me }) {
   const weekly = plan.meals.some((m) => m.day_of_week != null);
   const meals = plan.meals.filter((m) => !weekly || m.day_of_week == null || m.day_of_week === d);
   const kcal = meals.reduce((a, m) => a + (Number(m.kcal) || 0), 0);
+  const fiber = meals.reduce((a, m) => a + (Number(m.fiber_g) || 0), 0);
   return (
     <div className="grid gap-3" data-portal-plan>
       <div className="rounded-2xl bg-surface p-4 shadow-card">
         <p className="text-[16px] font-extrabold">{plan.title}</p>
         <p className="mt-0.5 text-[12.5px] font-bold text-ink/50">{plan.target_kcal ? `الهدف ${fmt(plan.target_kcal, 0)} سعرة/يوم` : ''}{kcal ? ` · هذا اليوم ${fmt(kcal, 0)} سعرة` : ''}</p>
+        {(plan.target_water_ml || plan.target_fiber_g) && (
+          <div className="mt-2.5 grid grid-cols-2 gap-2" data-portal-plan-targets>
+            {plan.target_water_ml ? (
+              <div className="rounded-xl bg-brand-50 px-3 py-2">
+                <p className="text-[11px] font-bold text-brand-700/70">💧 الماء يومياً</p>
+                <p className="tnum text-[15px] font-extrabold text-brand-800">{`${fmt(plan.target_water_ml / 1000)} لتر`}</p>
+                <p className="tnum text-[10.5px] font-bold text-ink/45">{`≈ ${Math.round(plan.target_water_ml / 250)} كوب`}</p>
+              </div>
+            ) : <span />}
+            {plan.target_fiber_g ? (
+              <div className="rounded-xl bg-leaf-50 px-3 py-2">
+                <p className="text-[11px] font-bold text-leaf-600/80">🌾 الألياف يومياً</p>
+                <p className="tnum text-[15px] font-extrabold text-leaf-600">{`${fmt(plan.target_fiber_g, 0)} غ`}</p>
+                {fiber > 0 && <p className="tnum text-[10.5px] font-bold text-ink/45">{`في وجبات هذا اليوم ${fmt(fiber, 0)} غ`}</p>}
+              </div>
+            ) : null}
+          </div>
+        )}
       </div>
       {weekly && (
         <div className="no-scrollbar -mx-1 flex gap-1.5 overflow-x-auto px-1">

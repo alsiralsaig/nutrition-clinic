@@ -50,8 +50,9 @@ export function waistHip(waist, hip) {
 }
 
 export function sumMacros(meals = []) {
-  const t = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0 };
+  const t = { kcal: 0, protein_g: 0, carbs_g: 0, fat_g: 0, fiber_g: 0 };
   for (const m of meals) {
+    t.fiber_g += num(m.fiber_g) || 0;
     t.kcal += num(m.kcal) || 0;
     t.protein_g += num(m.protein_g) || 0;
     t.carbs_g += num(m.carbs_g) || 0;
@@ -62,6 +63,7 @@ export function sumMacros(meals = []) {
     protein_g: round(t.protein_g, 1),
     carbs_g: round(t.carbs_g, 1),
     fat_g: round(t.fat_g, 1),
+    fiber_g: round(t.fiber_g, 1),
   };
 }
 

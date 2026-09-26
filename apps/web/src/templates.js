@@ -1,7 +1,8 @@
 /**
  * قوالب جاهزة للبرامج الغذائية — مأخوذة من نسخة Google AI Studio (NutriCare-Clinic)
  * ومحوّلة لصيغة وجبات هذا التطبيق. تُملأ في محرر البرنامج بضغطة ثم يعدّلها الأخصائي.
- * القيم محسوبة من مجموع أصناف كل وجبة.
+ * السعرات والماكرو = مجموع أصناف كل وجبة. الألياف تقدير لكل صنف بحصته (جداول USDA الشائعة).
+ * هدف الألياف = الأكبر بين مجموع الوجبات و25 غ (الحد الأدنى الموصى به للبالغين).
  */
 
 // i18n-ignore — محتوى يُحفظ في القاعدة كما هو
@@ -15,7 +16,8 @@ export const DIET_TEMPLATES = [
   "target_protein_g": 104.5,
   "target_carbs_g": 65,
   "target_fat_g": 46,
-  "water_l": 3,
+  "target_fiber_g": 25,
+  "target_water_ml": 3000,
   "advice": "فترة الصيام: 16 ساعة صيام (من 8 مساءً حتى 12 ظهراً) يسمح فيها بالماء والشاي الأخضر والقهوة السوداء بدون سكر.\nفترة الأكل: 8 ساعات منظمة تبدأ بكسر الصيام وتنتهي قبل 8 مساءً.\nشرب 3 لتر ماء يومياً وتوزيعها بانتظام.\nيُمنع: السكريات السريعة، المقليات، العصائر المحلاة، المخبوزات بالدقيق الأبيض.",
   "meals": [
    {
@@ -27,7 +29,8 @@ export const DIET_TEMPLATES = [
     "kcal": 369,
     "protein_g": 19,
     "carbs_g": 26,
-    "fat_g": 22
+    "fat_g": 22,
+    "fiber_g": 9
    },
    {
     "slot": "سناك عصري",
@@ -38,7 +41,8 @@ export const DIET_TEMPLATES = [
     "kcal": 215,
     "protein_g": 19.5,
     "carbs_g": 10,
-    "fat_g": 10.5
+    "fat_g": 10.5,
+    "fiber_g": 4.3
    },
    {
     "slot": "العشاء",
@@ -49,7 +53,8 @@ export const DIET_TEMPLATES = [
     "kcal": 540,
     "protein_g": 66,
     "carbs_g": 29,
-    "fat_g": 13.5
+    "fat_g": 13.5,
+    "fiber_g": 6.4
    }
   ]
  },
@@ -62,7 +67,8 @@ export const DIET_TEMPLATES = [
   "target_protein_g": 180.5,
   "target_carbs_g": 207,
   "target_fat_g": 54.3,
-  "water_l": 4,
+  "target_fiber_g": 25,
+  "target_water_ml": 4000,
   "advice": "الحرص على تناول وجبة ما بعد التمرين خلال 45 دقيقة لدعم الاستشفاء العضلي.\nشرب 4 لترات ماء خلال أيام التمرين المكثف.\nالنوم 8 ساعات ليلاً لدعم إفراز هرمون النمو الطبيعي.\nيُمنع: الوجبات السريعة المشبعة بالدهون المتحولة، المشروبات الغازية السكرية.",
   "meals": [
    {
@@ -74,7 +80,8 @@ export const DIET_TEMPLATES = [
     "kcal": 620,
     "protein_g": 38.3,
     "carbs_g": 75,
-    "fat_g": 19.3
+    "fat_g": 19.3,
+    "fiber_g": 10.1
    },
    {
     "slot": "الغداء",
@@ -85,7 +92,8 @@ export const DIET_TEMPLATES = [
     "kcal": 740,
     "protein_g": 73.4,
     "carbs_g": 62,
-    "fat_g": 18.6
+    "fat_g": 18.6,
+    "fiber_g": 3.8
    },
    {
     "slot": "بعد التمرين",
@@ -96,7 +104,8 @@ export const DIET_TEMPLATES = [
     "kcal": 205,
     "protein_g": 24.8,
     "carbs_g": 24,
-    "fat_g": 1.6
+    "fat_g": 1.6,
+    "fiber_g": 2
    },
    {
     "slot": "العشاء",
@@ -107,7 +116,8 @@ export const DIET_TEMPLATES = [
     "kcal": 500,
     "protein_g": 44,
     "carbs_g": 46,
-    "fat_g": 14.8
+    "fat_g": 14.8,
+    "fiber_g": 9.4
    }
   ]
  },
@@ -120,7 +130,8 @@ export const DIET_TEMPLATES = [
   "target_protein_g": 82.5,
   "target_carbs_g": 92,
   "target_fat_g": 37.2,
-  "water_l": 2.8,
+  "target_fiber_g": 25,
+  "target_water_ml": 2800,
   "advice": "الاعتماد على الزيوت الأحادية غير المشبعة كزيت الزيتون.\nتناول الأسماك مرتين أسبوعياً على الأقل.\nالمشي اليومي لمدة نصف ساعة بعد إحدى الوجبات الرئيسية.\nيُمنع: الأطعمة المعالجة والمحليات المصنعة.",
   "meals": [
    {
@@ -132,7 +143,8 @@ export const DIET_TEMPLATES = [
     "kcal": 330,
     "protein_g": 15,
     "carbs_g": 31,
-    "fat_g": 16.7
+    "fat_g": 16.7,
+    "fiber_g": 5.7
    },
    {
     "slot": "الغداء",
@@ -143,7 +155,8 @@ export const DIET_TEMPLATES = [
     "kcal": 490,
     "protein_g": 50.5,
     "carbs_g": 33,
-    "fat_g": 16
+    "fat_g": 16,
+    "fiber_g": 7
    },
    {
     "slot": "العشاء",
@@ -154,7 +167,8 @@ export const DIET_TEMPLATES = [
     "kcal": 235,
     "protein_g": 17,
     "carbs_g": 28,
-    "fat_g": 4.5
+    "fat_g": 4.5,
+    "fiber_g": 5.4
    }
   ]
  }
@@ -166,11 +180,6 @@ export const MEAL_TEMPLATES = [
   "id": "rmt-bf-1",
   "name": "فطور صحي عالي البروتين والشبع",
   "en": "High-protein filling breakfast",
-  "tags": [
-   "عالي البروتين",
-   "شبع طويل",
-   "مقاومة إنسولين"
-  ],
   "slot": "الفطور",
   "slot_time": "08:30",
   "title": "فطور صحي عالي البروتين والشبع",
@@ -179,17 +188,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 335,
   "protein_g": 30,
   "carbs_g": 25,
-  "fat_g": 9
+  "fat_g": 9,
+  "fiber_g": 4.8
  },
  {
   "id": "rmt-bf-2",
   "name": "فطور كيتو منخفض النشويات بالأفوكادو",
   "en": "Keto low-carb avocado breakfast",
-  "tags": [
-   "كيتو",
-   "قليل الكارب",
-   "صحة القلب"
-  ],
   "slot": "الفطور",
   "slot_time": "08:30",
   "title": "فطور كيتو منخفض النشويات بالأفوكادو",
@@ -198,17 +203,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 380,
   "protein_g": 18.5,
   "carbs_g": 7.5,
-  "fat_g": 32
+  "fat_g": 32,
+  "fiber_g": 5.7
  },
  {
   "id": "rmt-bf-3",
   "name": "إفطار الشوفان والتوت الغني بالألياف",
   "en": "High-fibre oats & berries breakfast",
-  "tags": [
-   "ألياف عالية",
-   "صحة الهضم",
-   "طاقة مستدامة"
-  ],
   "slot": "الفطور",
   "slot_time": "08:00",
   "title": "إفطار الشوفان والتوت الغني بالألياف",
@@ -217,17 +218,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 295,
   "protein_g": 10.5,
   "carbs_g": 44,
-  "fat_g": 8.2
+  "fat_g": 8.2,
+  "fiber_g": 9.7
  },
  {
   "id": "rmt-lu-1",
   "name": "غداء منخفض الكربوهيدرات (Low Carb Lunch)",
   "en": "Low-carb lunch",
-  "tags": [
-   "قليل الكارب",
-   "حرق دهون",
-   "تنشيف"
-  ],
   "slot": "الغداء",
   "slot_time": "14:30",
   "title": "غداء منخفض الكربوهيدرات",
@@ -236,17 +233,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 385,
   "protein_g": 52,
   "carbs_g": 12,
-  "fat_g": 11.5
+  "fat_g": 11.5,
+  "fiber_g": 6.9
  },
  {
   "id": "rmt-lu-2",
   "name": "غداء السلمون المشوي وأوميغا 3",
   "en": "Grilled salmon & omega-3 lunch",
-  "tags": [
-   "أوميغا 3",
-   "مضاد للالتهاب",
-   "متوازن صحي"
-  ],
   "slot": "الغداء",
   "slot_time": "14:00",
   "title": "غداء السلمون المشوي وأوميغا 3",
@@ -255,17 +248,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 485,
   "protein_g": 41,
   "carbs_g": 35,
-  "fat_g": 19.2
+  "fat_g": 19.2,
+  "fiber_g": 6.4
  },
  {
   "id": "rmt-lu-3",
   "name": "غداء رياضي عالي البروتين لبناء العضلات",
   "en": "High-protein muscle-building lunch",
-  "tags": [
-   "بناء عضل",
-   "رياضيين",
-   "طاقة ونشاط"
-  ],
   "slot": "الغداء",
   "slot_time": "14:00",
   "title": "غداء رياضي عالي البروتين لبناء العضلات",
@@ -274,17 +263,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 580,
   "protein_g": 64,
   "carbs_g": 60,
-  "fat_g": 8
+  "fat_g": 8,
+  "fiber_g": 3.7
  },
  {
   "id": "rmt-lu-4",
   "name": "غداء اللحم البقري الصافي والكينوا",
   "en": "Lean beef & quinoa lunch",
-  "tags": [
-   "حديد وزنك",
-   "طاقة",
-   "تغذية علاجية"
-  ],
   "slot": "الغداء",
   "slot_time": "14:30",
   "title": "غداء اللحم البقري الصافي والكينوا",
@@ -293,17 +278,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 450,
   "protein_g": 44.9,
   "carbs_g": 27,
-  "fat_g": 14.9
+  "fat_g": 14.9,
+  "fiber_g": 5.8
  },
  {
   "id": "rmt-di-1",
   "name": "عشاء خفيف مريح للهضم والقولون",
   "en": "Light, gut-friendly dinner",
-  "tags": [
-   "خفيف جداً",
-   "صحة القولون",
-   "نوم مريح"
-  ],
   "slot": "العشاء",
   "slot_time": "20:30",
   "title": "عشاء خفيف مريح للهضم والقولون",
@@ -312,17 +293,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 165,
   "protein_g": 18.2,
   "carbs_g": 9.5,
-  "fat_g": 5
+  "fat_g": 5,
+  "fiber_g": 3.1
  },
  {
   "id": "rmt-di-2",
   "name": "عشاء التونة والسلطة الخضراء بالليمون",
   "en": "Tuna & green salad dinner",
-  "tags": [
-   "حارق للدهون",
-   "بروتين صافي",
-   "صفر سكر"
-  ],
   "slot": "العشاء",
   "slot_time": "21:00",
   "title": "عشاء التونة والسلطة الخضراء بالليمون",
@@ -331,17 +308,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 185,
   "protein_g": 32,
   "carbs_g": 6,
-  "fat_g": 2
+  "fat_g": 2,
+  "fiber_g": 3
  },
  {
   "id": "rmt-di-3",
   "name": "عشاء الجبنة القريش مع التوست الأسمر",
   "en": "Cottage cheese & brown toast dinner",
-  "tags": [
-   "كازين بطيء الامتصاص",
-   "مشبع",
-   "متوازن"
-  ],
   "slot": "العشاء",
   "slot_time": "20:30",
   "title": "عشاء الجبنة القريش مع التوست الأسمر",
@@ -350,17 +323,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 208,
   "protein_g": 16.5,
   "carbs_g": 23,
-  "fat_g": 5
+  "fat_g": 5,
+  "fiber_g": 3.8
  },
  {
   "id": "rmt-sn-1",
   "name": "سناك التفاح واللوز النيء المنشط",
   "en": "Apple & raw almonds snack",
-  "tags": [
-   "سناك عمل",
-   "مضادات أكسدة",
-   "سد شهية"
-  ],
   "slot": "سناك صباحي",
   "slot_time": "11:30",
   "title": "سناك التفاح واللوز النيء المنشط",
@@ -369,17 +338,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 160,
   "protein_g": 3.5,
   "carbs_g": 22,
-  "fat_g": 7.5
+  "fat_g": 7.5,
+  "fiber_g": 5.8
  },
  {
   "id": "rmt-sn-2",
   "name": "وجبة ما بعد التمرين البنائية (بروتين + تمر)",
   "en": "Post-workout recovery (protein + dates)",
-  "tags": [
-   "بعد التمرين",
-   "استشفاء عضلي",
-   "رياضي"
-  ],
   "slot": "بعد التمرين",
   "slot_time": "17:30",
   "title": "وجبة ما بعد التمرين البنائية",
@@ -388,17 +353,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 205,
   "protein_g": 25.8,
   "carbs_g": 24,
-  "fat_g": 1.1
+  "fat_g": 1.1,
+  "fiber_g": 2
  },
  {
   "id": "rmt-bf-4",
   "name": "فطور نباتي متوازن مع حمص بالطحينة وزيت الزيتون",
   "en": "Balanced vegan breakfast with hummus",
-  "tags": [
-   "نباتي",
-   "ألياف",
-   "صحة الجهاز الهضمي"
-  ],
   "slot": "الفطور",
   "slot_time": "08:30",
   "title": "فطور نباتي متوازن مع حمص بالطحينة وزيت الزيتون",
@@ -407,17 +368,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 310,
   "protein_g": 13,
   "carbs_g": 34,
-  "fat_g": 14.5
+  "fat_g": 14.5,
+  "fiber_g": 10.5
  },
  {
   "id": "rmt-lu-5",
   "name": "غداء الدجاج بالليمون والفاصوليا الخضراء (سوبر كيتو)",
   "en": "Lemon chicken & green beans (keto)",
-  "tags": [
-   "كيتو",
-   "صفر سكر",
-   "حرق دهون"
-  ],
   "slot": "الغداء",
   "slot_time": "14:00",
   "title": "غداء الدجاج بالليمون والفاصوليا الخضراء",
@@ -426,17 +383,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 360,
   "protein_g": 48,
   "carbs_g": 7,
-  "fat_g": 11.5
+  "fat_g": 11.5,
+  "fiber_g": 3.3
  },
  {
   "id": "rmt-lu-6",
   "name": "غداء فيليه السمك المشوي وأرز الزعفران الخفيف",
   "en": "Grilled fish fillet & light saffron rice",
-  "tags": [
-   "قليل الدهون",
-   "سهل الهضم",
-   "صحي"
-  ],
   "slot": "الغداء",
   "slot_time": "14:30",
   "title": "غداء فيليه السمك المشوي وأرز الزعفران الخفيف",
@@ -445,17 +398,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 410,
   "protein_g": 42,
   "carbs_g": 42,
-  "fat_g": 7
+  "fat_g": 7,
+  "fiber_g": 2
  },
  {
   "id": "rmt-di-4",
   "name": "عشاء شوربة الخضار الحارقة مع شرائح الدجاج",
   "en": "Veggie soup with chicken strips",
-  "tags": [
-   "حارق للدهون",
-   "عشاء دافئ",
-   "سعرات منخفضة"
-  ],
   "slot": "العشاء",
   "slot_time": "20:30",
   "title": "عشاء شوربة الخضار الحارقة مع شرائح الدجاج",
@@ -464,17 +413,13 @@ export const MEAL_TEMPLATES = [
   "kcal": 195,
   "protein_g": 28,
   "carbs_g": 11,
-  "fat_g": 3
+  "fat_g": 3,
+  "fiber_g": 3
  },
  {
   "id": "rmt-sn-3",
   "name": "سناك بودينغ بذور الشيا مع حليب اللوز والفراولة",
   "en": "Chia pudding with almond milk & strawberries",
-  "tags": [
-   "أوميغا 3",
-   "مضاد أكسدة",
-   "سناك حلو وصحي"
-  ],
   "slot": "سناك عصري",
   "slot_time": "16:30",
   "title": "سناك بودينغ بذور الشيا مع حليب اللوز والفراولة",
@@ -483,6 +428,7 @@ export const MEAL_TEMPLATES = [
   "kcal": 110,
   "protein_g": 3.5,
   "carbs_g": 13.5,
-  "fat_g": 5.7
+  "fat_g": 5.7,
+  "fiber_g": 6.1
  }
 ];
