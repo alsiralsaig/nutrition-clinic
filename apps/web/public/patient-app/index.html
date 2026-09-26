@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0e7c66">
+  <title>تغديتك — تطبيق المريض</title>
+  <meta name="apple-mobile-web-app-title" content="تغديتك">
+  <meta name="mobile-web-app-capable" content="yes">
+  <link rel="manifest" href="/api/portal/manifest" data-fallback="manifest.json">
+  <link rel="icon" href="icons/icon-192.png" id="brand-icon">
+  <link rel="apple-touch-icon" href="icons/icon-180.png" id="apple-icon">
+  <link rel="apple-touch-startup-image" href="splash/splash-640x1136.jpg" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-750x1334.jpg" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-828x1792.jpg" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1125x2436.jpg" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1170x2532.jpg" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1179x2556.jpg" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1242x2688.jpg" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1284x2778.jpg" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1290x2796.jpg" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1320x2868.jpg" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1536x2048.jpg" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1668x2388.jpg" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-2048x2732.jpg" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- شاشة الترحيب (أول مرة) -->
+  <div id="welcome-screen" class="screen" hidden>
+    <img src="images/banner.jpg" alt="تغديتك" class="welcome-img">
+    <div class="welcome-cta">
+      <p>برنامجك الغذائي ومتابعة يومك — كل ذلك من هاتفك</p>
+      <button id="welcome-btn" class="btn-primary">ابدأ</button>
+    </div>
+  </div>
+
+  <!-- شاشة الدخول -->
+  <div id="login-screen" class="screen">
+    <div class="login-card">
+      <img src="images/brand-band.jpg" alt="" class="login-band" id="login-band" hidden>
+      <div class="login-textbrand" id="login-textbrand">
+        <h1 id="login-name">تطبيق المريض</h1>
+        <p class="login-brand">بوابة المرضى</p>
+      </div>
+      <p class="login-sub" id="login-hint">ادخل رقم ملفك والرمز الذي أرسلته لك العيادة</p>
+      <label class="field">
+        <span>رقم الملف</span>
+        <input id="file-input" type="text" inputmode="text" placeholder="NC-0001" autocomplete="off">
+      </label>
+      <label class="field">
+        <span>رمز الدخول</span>
+        <input id="code-input" type="text" inputmode="text" placeholder="XXXX-XXXX" autocomplete="off" maxlength="9">
+      </label>
+      <button id="login-btn" class="btn-primary">دخول</button>
+      <div id="install-hint" class="install-hint" hidden>
+        <span id="install-hint-text"></span>
+        <button id="install-hint-close" aria-label="إخفاء">×</button>
+      </div>
+      <button id="paste-link-btn" class="btn-ghost" type="button"> لديّ رابط من العيادة</button>
+      <div id="link-box" hidden>
+        <input id="link-input" type="text" inputmode="url" placeholder="الصق الرابط هنا" autocomplete="off">
+      </div>
+      <p id="login-error" class="login-error" hidden></p>
+    </div>
+  </div>
+
+  <!-- التطبيق -->
+  <div id="app" hidden>
+    <header class="app-header">
+      <div class="header-top">
+        <img id="header-icon" src="icons/icon-192.png" alt="" class="header-icon">
+        <div class="header-text">
+          <div class="clinic" id="header-clinic"></div>
+          <div class="hello" id="header-hello"></div>
+        </div>
+      </div>
+      <button id="settings-btn" class="icon-btn" title="خيارات">⚙️</button>
+    </header>
+
+    <main id="content">
+      <!-- البرنامج -->
+      <section id="tab-program" class="tab">
+        <div id="alert-box"></div>
+        <div id="plan-summary"></div>
+        <div class="week-picker" id="week-picker"></div>
+        <h2 class="tab-title" id="meals-title">وجبات اليوم</h2>
+        <div id="meals-list"></div>
+      </section>
+
+      <!-- اليوم -->
+      <section id="tab-today" class="tab" hidden>
+        <div id="save-flash" class="save-flash" hidden></div>
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">💧 الماء</span>
+            <span class="card-count" id="water-count"></span>
+          </div>
+          <div class="progress"><div id="water-bar" class="progress-fill water"></div></div>
+          <p class="muted small" id="water-goal-label"></p>
+          <div class="quick-row">
+            <button class="btn-quick" data-water="-250">−250 مل</button>
+            <button class="btn-quick" data-water="250">+250 مل</button>
+            <button class="btn-quick" data-water="500">+500 مل</button>
+            <button class="btn-quick" id="water-done" data-water="done">كافيت اليوم ✔</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">🏃 النشاط</span>
+            <span class="card-count" id="activity-count"></span>
+          </div>
+          <p class="muted small" id="activity-goal-label"></p>
+          <div class="quick-row">
+            <button class="btn-quick" data-activity="-15">−15 د</button>
+            <button class="btn-quick" data-activity="15">+15 د</button>
+            <button class="btn-quick" data-activity="30">+30 د</button>
+          </div>
+          <div class="chips-row" id="activity-types"></div>
+        </div>
+
+        <div class="card">
+          <div class="card-head">
+            <span class="card-title">😴 النوم (الليلة الماضية)</span>
+            <span class="card-count" id="sleep-count"></span>
+          </div>
+          <p class="muted small" id="sleep-goal-label"></p>
+          <div class="quick-row">
+            <button class="btn-quick" data-sleep="-0.5">−30 د</button>
+            <button class="btn-quick" data-sleep="0.5">+30 د</button>
+            <button class="btn-quick" data-sleep="1">+ساعة</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <span class="card-title">📊 آخر 14 يوماً</span>
+          <div id="habit-summary" class="summary-grid"></div>
+        </div>
+      </section>
+
+      <!-- المواعيد -->
+      <section id="tab-appts" class="tab" hidden>
+        <h2 class="tab-title">مواعيد قادمة</h2>
+        <div id="upcoming-list"></div>
+        <h2 class="tab-title">قائمة الانتظار</h2>
+        <div id="waitlist-box"></div>
+        <h2 class="tab-title">سجل زيارات</h2>
+        <div id="past-list"></div>
+      </section>
+
+      <!-- تقدمي -->
+      <section id="tab-progress" class="tab" hidden>
+        <div id="progress-box"></div>
+      </section>
+
+      <!-- ملفي -->
+      <section id="tab-profile" class="tab" hidden>
+        <div class="card" id="profile-card"></div>
+        <h2 class="tab-title">التاريخ الطبي</h2>
+        <div id="history-list"></div>
+        <h2 class="tab-title">تواصل مع العيادة</h2>
+        <div class="card contact-card">
+          <p class="muted" id="clinic-info"></p>
+          <a id="whatsapp-btn" class="btn-whatsapp" target="_blank" rel="noopener">💬 واتساب العيادة</a>
+          <a id="phone-btn" class="btn-phone">📞 اتصال هاتفي</a>
+        </div>
+        <div class="card">
+          <button id="install-btn" class="sheet-btn" style="display:none">📲 تثبيت التطبيق على الهاتف</button>
+          <button id="logout-btn" class="sheet-btn sheet-close" style="margin-top:8px">🚪 تسجيل الخروج</button>
+          <p class="muted small" style="margin-top:10px" id="app-footer">تطبيق المريض v1.2 — مرتبط بنظام العيادة مباشرة</p>
+        </div>
+      </section>
+    </main>
+
+    <!-- الشريط السفلي -->
+    <nav class="tabbar">
+      <button class="tab-btn active" data-tab="program"><span class="tab-ico">🍽️</span>البرنامج</button>
+      <button class="tab-btn" data-tab="today"><span class="tab-ico">💧</span>اليوم</button>
+      <button class="tab-btn" data-tab="appts"><span class="tab-ico">📅</span>المواعيد</button>
+      <button class="tab-btn" data-tab="progress"><span class="tab-ico">📈</span>تقدمي</button>
+      <button class="tab-btn" data-tab="profile"><span class="tab-ico">👤</span>ملفي</button>
+    </nav>
+  </div>
+
+  <!-- قائمة الخيارات -->
+  <div id="settings-overlay" class="overlay" hidden>
+    <div class="sheet">
+      <div class="sheet-row"><span>👤</span><span id="sheet-patient-name"></span></div>
+      <button id="sheet-install" class="sheet-btn">📲 تثبيت التطبيق على الهاتف</button>
+      <button id="sheet-logout" class="sheet-btn">🚪 تسجيل الخروج (أو مريض آخر)</button>
+      <button id="close-sheet" class="sheet-btn sheet-close">إغلاق</button>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

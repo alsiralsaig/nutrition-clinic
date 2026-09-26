@@ -79,7 +79,7 @@ try {
   check('لا رمز بوابة قبل الإصدار', st0.status === 200 && st0.json?.active === false && /#\/portal$/.test(st0.json?.portal_url || ''), JSON.stringify(st0.json));
   check('الاستقبال (قراءة فقط) لا يصدر رمزاً', (await req('POST', `/api/patients/${A.id}/portal-access`, { token: viewer })).status === 403);
   const acc = await req('POST', `/api/patients/${A.id}/portal-access`, { token: tk });
-  check('إصدار رمز QR (201) برابط البوابة ورمز احتياطي', acc.status === 201 && /#\/portal\/login\?t=[A-Za-z0-9_-]{30,}$/.test(acc.json?.url || '') && /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(acc.json?.code || ''), JSON.stringify(acc.json));
+  check('إصدار رمز QR (201) برابط التطبيق (PWA) ورمز احتياطي', acc.status === 201 && /\/patient-app\/\?t=[A-Za-z0-9_-]{30,}$/.test(acc.json?.url || '') && /^[A-Z2-9]{4}-[A-Z2-9]{4}$/.test(acc.json?.code || ''), JSON.stringify(acc.json));
   const st1 = await req('GET', `/api/patients/${A.id}/portal-access`, { token: tk });
   check('حالة الرمز: نشط (بلا كشف الرمز نفسه)', st1.json?.active === true && !('token' in st1.json) && !('code' in st1.json));
   const qr = await req('POST', '/api/portal/auth/qr', { body: { token: acc.json.token } });

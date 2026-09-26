@@ -2295,6 +2295,39 @@
         "security": []
       }
     },
+    "/api/portal/branding": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "بيانات العلامة (عام): اسم العيادة + لوجو/بانر التطبيق الاختياريان",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portal/manifest": {
+      "get": {
+        "tags": [
+          "portal"
+        ],
+        "summary": "مانيفست PWA ديناميكي (يعكس اسم العيادة من الإعدادات)",
+        "responses": {
+          "200": {
+            "description": "Web App Manifest JSON"
+          }
+        }
+      }
+    },
     "/api/portal/me": {
       "get": {
         "tags": [

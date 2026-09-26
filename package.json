@@ -18,6 +18,7 @@
     "test:api": "node apps/api/test/smoke.test.js && node apps/api/test/features.test.js && node apps/api/test/portal.test.js",
     "test:ui": "node apps/web/test/ui.test.mjs",
     "test:portal-ui": "node apps/web/test/portal-ui.test.mjs",
+    "test:patient-app": "node apps/web/test/patient-app.test.mjs",
     "deploy:check": "node scripts/gen-vercel-bridges.mjs && node scripts/check-vercel-config.mjs",
     "deploy:bridges": "node scripts/gen-vercel-bridges.mjs",
     "deploy:sim": "node scripts/simulate-vercel.mjs"
@@ -27,6 +28,6 @@
     "jsdom": "^25.0.1"
   },
   "engines": {
-    "node": "20.x"
+    "node": "24.x"
   }
 }

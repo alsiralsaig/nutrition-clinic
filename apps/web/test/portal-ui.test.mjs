@@ -210,7 +210,7 @@ try {
   const codeShown = A.q('[data-portal-code]')?.textContent || '';
   check('إصدار QR: يظهر الرمز SVG', !!A.q('.qr-box svg') && A.q('.qr-box')?.dataset.qr === 'ready');
   check('إصدار QR: الرمز XXXX-XXXX يظهر مرة واحدة مع تحذير', /^[A-Z0-9]{4}-[A-Z0-9]{4}$/.test(codeShown) && A.T().includes('يظهر مرة واحدة فقط'), codeShown);
-  check('إصدار QR: الرابط يوجّه لـ #/portal/login?t=', /#\/portal\/login\?t=[A-Za-z0-9_-]{20,}/.test(issued?.url || ''), issued?.url);
+  check('إصدار QR: الرابط يوجّه لتطبيق المريض (PWA) ?t=', /\/patient-app\/\?t=[A-Za-z0-9_-]{20,}/.test(issued?.url || ''), issued?.url);
   await A.clk(A.byText('طباعة البطاقة'), 700);
   check('بطاقة QR قابلة للطباعة', A.T().includes('بطاقة دخول البوابة') && A.T().includes('لا تشاركها مع أحد') && A.qa('.qr-box svg').length >= 2);
   await A.clk(A.byText('إغلاق', 'button'), 400);

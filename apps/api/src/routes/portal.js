@@ -36,6 +36,42 @@ router.post('/auth/code', wrap(async (req, res) => {
   await login(req, res, await findAccess({ fileNo, code }));
 }));
 
+// ---------- تعريف العلامة (عام) — يقرؤه تطبيق المريض (PWA) ----------
+router.get('/branding', wrap(async (req, res) => {
+  const s = await getSettings();
+  res.json({
+    name: s['clinic.name'] || 'تطبيق المريض',
+    phone: s['clinic.phone'] || '',
+    address: s['clinic.address'] || '',
+    logo: s['clinic.app_logo'] || '',
+    banner: s['clinic.app_banner'] || '',
+  });
+}));
+
+router.get('/manifest', wrap(async (req, res) => {
+  const s = await getSettings();
+  const name = s['clinic.name'] || 'تطبيق المريض';
+  res.json({
+    name: `${name} — تطبيق المريض`,
+    short_name: name.length > 12 ? name.slice(0, 12) : name,
+    description: `برنامجك الغذائي، متابعة الماء والنوم والنشاط، مواعيدك، وتواصل مع ${name}`,
+    start_url: '/patient-app/index.html',
+    scope: '/patient-app/',
+    display: 'standalone',
+    orientation: 'portrait',
+    dir: 'rtl',
+    lang: 'ar',
+    background_color: '#47704c',
+    theme_color: '#0e7c66',
+    icons: [
+      ...(s['clinic.app_logo'] ? [{ src: s['clinic.app_logo'], sizes: '512x512', type: 'image/png', purpose: 'any' }] : []),
+      { src: '/patient-app/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/patient-app/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/patient-app/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
+}));
+
 // ---------- كل ما بعده للمريض المسجّل فقط ----------
 router.use(patientRequired);
 const me = (req) => req.patient.id;
@@ -44,8 +80,9 @@ router.get('/me', wrap(async (req, res) => {
   const id = me(req);
   await sweepOffers({ base: publicUrl(req) });
   const s = await getSettings();
-  const p = await db.get(`SELECT id, file_no, first_name, last_name, gender, birth_date, height_cm, start_weight, goal_weight, goal, status,
-    water_target_ml, sleep_target_h, activity_target_min FROM patients WHERE id=?`, id);
+  const p = await db.get(`SELECT id, file_no, first_name, last_name, gender, birth_date, height_cm, start_weight, goal_weight, goal, status, phone,
+    water_target_ml, sleep_target_h, activity_target_min,
+    chronic_conditions, allergies, medications, forbidden_foods, blood_type FROM patients WHERE id=?`, id);
   const meas = await db.all(`SELECT measured_on, weight_kg, waist_cm, hip_cm, body_fat_pct, height_cm FROM measurements WHERE patient_id=? ORDER BY measured_on, id`, id);
   const last = meas.at(-1);
   const bmi = last ? calcBMI(last.weight_kg, last.height_cm ?? p.height_cm) : null;
