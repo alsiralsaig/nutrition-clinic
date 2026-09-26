@@ -69,6 +69,15 @@ body {
   width: 100%; margin-top: 10px; padding: 10px; background: none; border: none;
   color: var(--green-dark); font-size: 13.5px; font-weight: 700; cursor: pointer; font-family: inherit;
 }
+.install-hint {
+  margin-top: 14px; background: var(--green-light); border: 1px solid #c4e2d9;
+  border-radius: 12px; padding: 10px 32px 10px 12px; position: relative;
+  font-size: 12.5px; font-weight: 700; color: var(--green-dark); line-height: 1.7; text-align: right;
+}
+.install-hint-close {
+  position: absolute; top: 8px; left: 8px; border: none; background: none;
+  font-size: 17px; color: var(--muted); cursor: pointer; line-height: 1; padding: 2px 6px;
+}
 #link-box { margin-top: 10px; }
 #link-box input {
   width: 100%; font-size: 13.5px; padding: 11px 13px; border: 2px solid #d7e5e1;

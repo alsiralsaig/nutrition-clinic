@@ -63,6 +63,7 @@ router.get('/manifest', wrap(async (req, res) => {
     background_color: '#47704c',
     theme_color: '#0e7c66',
     icons: [
+      ...(s['clinic.app_logo'] ? [{ src: s['clinic.app_logo'], sizes: '512x512', type: 'image/png', purpose: 'any' }] : []),
       { src: '/patient-app/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/patient-app/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: '/patient-app/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },

@@ -5,9 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0e7c66">
   <title>تغديتك — تطبيق المريض</title>
+  <meta name="apple-mobile-web-app-title" content="تغديتك">
+  <meta name="mobile-web-app-capable" content="yes">
   <link rel="manifest" href="/api/portal/manifest" data-fallback="manifest.json">
-  <link rel="icon" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="icon" href="icons/icon-192.png" id="brand-icon">
+  <link rel="apple-touch-icon" href="icons/icon-180.png" id="apple-icon">
+  <link rel="apple-touch-startup-image" href="splash/splash-640x1136.jpg" media="(device-width: 320px) and (device-height: 568px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-750x1334.jpg" media="(device-width: 375px) and (device-height: 667px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-828x1792.jpg" media="(device-width: 414px) and (device-height: 736px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1125x2436.jpg" media="(device-width: 375px) and (device-height: 812px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1170x2532.jpg" media="(device-width: 390px) and (device-height: 844px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1179x2556.jpg" media="(device-width: 393px) and (device-height: 852px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1242x2688.jpg" media="(device-width: 414px) and (device-height: 896px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1284x2778.jpg" media="(device-width: 428px) and (device-height: 926px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1290x2796.jpg" media="(device-width: 430px) and (device-height: 932px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1320x2868.jpg" media="(device-width: 440px) and (device-height: 956px) and (-webkit-device-pixel-ratio: 3)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1536x2048.jpg" media="(device-width: 768px) and (device-height: 1024px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-1668x2388.jpg" media="(device-width: 834px) and (device-height: 1194px) and (-webkit-device-pixel-ratio: 2)">
+  <link rel="apple-touch-startup-image" href="splash/splash-2048x2732.jpg" media="(device-width: 1024px) and (device-height: 1366px) and (-webkit-device-pixel-ratio: 2)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="styles.css">
@@ -41,6 +56,10 @@
         <input id="code-input" type="text" inputmode="text" placeholder="XXXX-XXXX" autocomplete="off" maxlength="9">
       </label>
       <button id="login-btn" class="btn-primary">دخول</button>
+      <div id="install-hint" class="install-hint" hidden>
+        <span id="install-hint-text"></span>
+        <button id="install-hint-close" aria-label="إخفاء">×</button>
+      </div>
       <button id="paste-link-btn" class="btn-ghost" type="button"> لديّ رابط من العيادة</button>
       <div id="link-box" hidden>
         <input id="link-input" type="text" inputmode="url" placeholder="الصق الرابط هنا" autocomplete="off">

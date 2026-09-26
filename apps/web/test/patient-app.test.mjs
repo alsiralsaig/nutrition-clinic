@@ -125,6 +125,13 @@ function check(name, cond) {
   check("اسم العيادة من الإعدادات (نصاً) + عنوان الصفحة",
     w.document.querySelector("#login-name")?.textContent === "عيادة تجريبية" &&
     w.document.title.includes("عيادة تجريبية"));
+  check("اسم أيقونة آيفون من الإعدادات (بحد iOS = 12 حرفاً)",
+    w.document.querySelector('meta[name="apple-mobile-web-app-title"]').content ===
+    (config.branding.name.length > 12 ? config.branding.name.slice(0, 12) : config.branding.name));
+  check("تلميح التثبيت يظهر على غير المثبّت", !w.document.querySelector("#install-hint").hidden);
+  w.document.querySelector("#install-hint-close").dispatchEvent(new w.Event("click", { bubbles: true }));
+  check("تلميح التثبيت يُخفى ويُحفظ الإخفاء", w.document.querySelector("#install-hint").hidden &&
+    w.localStorage.getItem("tg_hint") === "1");
   const file = w.document.querySelector("#file-input");
   const code = w.document.querySelector("#code-input");
   file.value = "NC-0009";
@@ -173,6 +180,8 @@ function check(name, cond) {
   await new Promise((r) => setTimeout(r, 80));
   check("لوجو مخصص يظهر بدلاً من النص",
     !w.document.querySelector("#login-band").hidden && w.document.querySelector("#login-textbrand").hidden);
+  check("أيقونة آيفون تتحدث للوجو المخصص",
+    w.document.querySelector("#apple-icon").getAttribute("href").includes("brand-band.jpg"));
   config.branding = { ...config.branding, logo: "" };
 }
 

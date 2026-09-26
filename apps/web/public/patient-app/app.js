@@ -72,6 +72,32 @@ function applyBranding(b) {
 
   /* البانر الترحيبي */
   if (b.banner) $("#welcome-screen img").src = new URL(b.banner, location.href).href;
+
+  /* اسم أيقونة الشاشة الرئيسية + الأيقونات من الإعدادات */
+  const titleMeta = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+  if (titleMeta) titleMeta.content = b.name.length > 12 ? b.name.slice(0, 12) : b.name;
+  if (b.logo) {
+    const u = new URL(b.logo, location.href).href;
+    const ai = $("#apple-icon"); if (ai) ai.href = u;
+    const bi = $("#brand-icon"); if (bi) bi.href = u;
+  }
+}
+
+/* تلميح التثبيت على الهاتف (يظهر مرة واحدة لكل جهاز) */
+function showInstallHint() {
+  try {
+    if (window.matchMedia("(display-mode: standalone)").matches) return; // مثبّت بالفعل
+  } catch (e) { /* ignore */ }
+  if (localStorage.getItem("tg_hint")) return;
+  const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+  $("#install-hint-text").textContent = isIOS
+    ? "📲 لتثبيت التطبيق: زر المشاركة (أسفل الشاشة) ثم «إضافة إلى الشاشة الرئيسية»"
+    : "📲 لتثبيت التطبيق: قائمة المتصفح (⋮) ثم «تثبيت التطبيق» أو «إضافة إلى الشاشة الرئيسية»";
+  $("#install-hint").hidden = false;
+  $("#install-hint-close").addEventListener("click", () => {
+    $("#install-hint").hidden = true;
+    localStorage.setItem("tg_hint", "1");
+  });
 }
 
 /* إن تعذر جلب المانيفست الديناميكي (دون اتصال) نستخدم النسخة الثابتة */
@@ -158,6 +184,7 @@ async function boot() {
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); state.installEvt = e; updateInstallBtns(); });
   ensureManifest();
   applyBranding(await fetchBranding());
+  showInstallHint();
 
   // 1) رابط QR/واتساب من العيادة → دخول مباشر دون الترحيب
   const t = new URLSearchParams(location.search).get("t");

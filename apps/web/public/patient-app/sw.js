@@ -1,12 +1,13 @@
 /* Service Worker — تطبيق المريض
    الواجهة تُخزَّن للعمل دون اتصال؛ بيانات الـ API لا تُخزَّن أبداً (الحساسية للتحديثات) */
-const CACHE = "patient-app-v4";
+const CACHE = "patient-app-v5";
 const SHELL = [
   "./",
   "./index.html",
   "./styles.css",
   "./app.js",
   "./manifest.json",
+  "./icons/icon-180.png",
   "./icons/icon-192.png",
   "./icons/icon-512.png",
   "./images/banner.jpg",
