@@ -7,7 +7,7 @@
 const VERSION = 'v1';
 const SHELL = `shell-${VERSION}`;
 const DATA = 'portal-data';
-const PRECACHE = ['/', '/index.html', '/app.webmanifest', '/icons/icon-192.png', '/icons/badge-96.png'];
+const PRECACHE = ['/', '/index.html', '/app.webmanifest'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(SHELL).then((c) => c.addAll(PRECACHE)).catch(() => {}).then(() => self.skipWaiting()));
@@ -81,8 +81,8 @@ self.addEventListener('push', (e) => {
   const title = d.title || 'عيادة التغذية';
   e.waitUntil(self.registration.showNotification(title, {
     body: d.body || '',
-    icon: '/icons/icon-192.png',
-    badge: '/icons/badge-96.png',
+    icon: 'https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/icon-192.png',
+    badge: 'https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/favicon-64.png',
     tag: d.tag || undefined,
     renotify: !!d.tag,
     requireInteraction: d.kind === 'video_call',
