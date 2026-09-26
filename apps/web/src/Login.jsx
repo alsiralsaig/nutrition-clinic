@@ -45,8 +45,10 @@ export default function Login() {
       {/* نموذج الدخول */}
       <div className="flex items-center justify-center bg-sand p-5">
         <form onSubmit={submit} className="card card-pad w-full max-w-[400px] p-6 sm:p-8">
-          <div className="mb-6 text-center lg:hidden">
-            <img src="https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/clinic-logo.png" alt="شعار تغذيتك" className="mx-auto h-20 w-20 rounded-2xl object-contain" />
+          <div className="mb-5 text-center lg:hidden">
+            <img src="https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/clinic-banner.png" alt="تغذيتك — إدارة عيادات التغذية، صحة أفضل لحياة أجمل"
+              className="mx-auto mb-3 max-h-[300px] w-full max-w-[340px] rounded-2xl object-contain" />
+            <img src="https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/clinic-logo.png" alt="شعار تغذيتك" className="mx-auto h-16 w-16 rounded-2xl object-contain" />
             <p className="mt-2 text-[16px] font-extrabold">نظام عيادة التغذية</p>
           </div>
           {!installed && (
