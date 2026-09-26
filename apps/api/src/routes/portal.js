@@ -43,8 +43,9 @@ router.get('/me', wrap(async (req, res) => {
   const id = me(req);
   await sweepOffers({ base: publicUrl(req) });
   const s = await getSettings();
-  const p = await db.get(`SELECT id, file_no, first_name, last_name, gender, birth_date, height_cm, start_weight, goal_weight, goal, status,
-    water_target_ml, sleep_target_h, activity_target_min FROM patients WHERE id=?`, id);
+  const p = await db.get(`SELECT id, file_no, first_name, last_name, gender, birth_date, height_cm, start_weight, goal_weight, goal, status, phone,
+    water_target_ml, sleep_target_h, activity_target_min,
+    chronic_conditions, allergies, medications, forbidden_foods, blood_type FROM patients WHERE id=?`, id);
   const meas = await db.all(`SELECT measured_on, weight_kg, waist_cm, hip_cm, body_fat_pct, height_cm FROM measurements WHERE patient_id=? ORDER BY measured_on, id`, id);
   const last = meas.at(-1);
   const bmi = last ? calcBMI(last.weight_kg, last.height_cm ?? p.height_cm) : null;

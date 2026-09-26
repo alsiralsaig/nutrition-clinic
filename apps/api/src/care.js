@@ -43,7 +43,10 @@ export async function issueAccess({ patientId, userId, base }) {
     await audit({ userId, action: 'portal.issue', entity: 'patients', entityId: patientId });
   });
   const row = await db.get(`SELECT created_at FROM patient_access WHERE id=?`, id);
-  return { id, token, code, file_no: p.file_no, url: portalLink(base, `/login?t=${token}`), created_at: row.created_at };
+  // الرابط يفتح تطبيق المريض (PWA) فيجده المريض قابلاً للتثبيت على هاتفه؛
+  // البوابة الويب تبقى متاحة عبر /#/portal بنفس الرمز
+  const url = `${String(base).replace(/\/$/, "")}/patient-app/?t=${token}`;
+  return { id, token, code, file_no: p.file_no, url, created_at: row.created_at };
 }
 
 export async function accessStatus(patientId) {
