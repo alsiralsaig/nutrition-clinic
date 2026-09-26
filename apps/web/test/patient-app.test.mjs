@@ -9,6 +9,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appDir = path.join(__dirname, "..", "public", "patient-app");
 const html = readFileSync(path.join(appDir, "index.html"), "utf8");
 const appJs = readFileSync(path.join(appDir, "app.js"), "utf8");
+const appCss = readFileSync(path.join(appDir, "styles.css"), "utf8");
+const serviceWorker = readFileSync(path.join(appDir, "sw.js"), "utf8");
 
 /* محاكاة /api/portal/me — مريض له برنامج نشط وتاريخ طبي */
 const ME = {
@@ -115,6 +117,20 @@ function check(name, cond) {
   results.push({ name, ok: !!cond });
   console.log(`  ${cond ? "✓" : "✗"} ${name}`);
 }
+
+/* ---------- سلامة التثبيت على الهاتف والقائمة ---------- */
+check("خاصية hidden تخفي قائمة الخيارات فعلاً",
+  /\[hidden\]\s*\{\s*display:\s*none\s*!important;\s*\}/.test(appCss));
+check("تعذر تنزيل ملف اختياري لا يفشل تثبيت عامل الخدمة",
+  serviceWorker.includes("Promise.all(SHELL.map((path) => cacheShellFile(cache, path)))") &&
+  serviceWorker.includes("// The app remains usable online; a failed optional precache must not block install."));
+check("تنظيف التخزين المؤقت يقتصر على تطبيق المريض",
+  serviceWorker.includes('k.startsWith("patient-app-") && k !== CACHE'));
+check("خيار لصق الرابط أزيل مع بقاء رقم الملف والرمز",
+  !html.includes('id="paste-link-btn"') && !html.includes('id="link-input"') &&
+  html.includes('id="file-input"') && html.includes('id="code-input"'));
+check("تسجيل الدخول اليدوي يرسل رقم الملف والرمز فقط",
+  appJs.includes('doLogin({ file_no: fileNo, code })') && !appJs.includes("extractTokenFromUrl"));
 
 /* ---------- 1) الدخول بالرمز ---------- */
 {
