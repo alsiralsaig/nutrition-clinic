@@ -124,18 +124,6 @@ const addDays = (iso, n) => { const d = parseISO(iso); d.setUTCDate(d.getUTCDate
 const dayIndexOf = (iso) => (parseISO(iso).getUTCDay() + 1) % 7; // 0=السبت
 
 /* ================= الدخول ================= */
-function extractTokenFromUrl(text) {
-  try {
-    const u = new URL(text.trim());
-    const t = u.searchParams.get("t") || "";
-    if (t) return t;
-    const h = u.hash.split("?")[1] || "";
-    const m = h.match(/[?&]t=([\w-]+)/);
-    if (m) return m[1];
-  } catch (e) { /* ليس رابطاً */ }
-  return null;
-}
-
 async function doLogin(body) {
   const path = body.token ? "/portal/auth/qr" : "/portal/auth/code";
   const d = await api(path, { method: "POST", body, auth: false });
@@ -149,8 +137,6 @@ function bindLogin() {
   const err = $("#login-error");
   const fileInput = $("#file-input");
   const codeInput = $("#code-input");
-  const linkBox = $("#link-box");
-  const linkInput = $("#link-input");
 
   codeInput.addEventListener("input", () => {
     // تنسيق تلقائي XXXX-XXXX
@@ -159,17 +145,9 @@ function bindLogin() {
   });
   fileInput.addEventListener("input", () => { fileInput.value = fileInput.value.toUpperCase(); });
 
-  $("#paste-link-btn").addEventListener("click", () => { linkBox.hidden = !linkBox.hidden; });
-
   async function submit() {
     const fileNo = fileInput.value.trim();
     const code = codeInput.value.trim();
-    const link = linkInput.value.trim();
-    if (link) {
-      const t = extractTokenFromUrl(link);
-      if (t) { showErr(""); return doLogin({ token: t }).catch((e) => showErr(e.message)); }
-      return showErr("لم أجد رمزاً في الرابط — تأكد أنه الرابط الذي أرسلته العيادة");
-    }
     if (!fileNo || !code) return showErr("أدخل رقم الملف والرمز");
     err.hidden = true;
     $("#login-btn").disabled = true;
@@ -180,7 +158,7 @@ function bindLogin() {
   function showErr(msg) { err.textContent = msg; err.hidden = !msg; }
 
   $("#login-btn").addEventListener("click", submit);
-  [fileInput, codeInput, linkInput].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
+  [fileInput, codeInput].forEach((el) => el.addEventListener("keydown", (e) => { if (e.key === "Enter") submit(); }));
 }
 
 async function boot() {
