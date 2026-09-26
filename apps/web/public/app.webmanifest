@@ -13,13 +13,13 @@
   "theme_color": "#0f6360",
   "categories": ["health", "medical", "lifestyle"],
   "icons": [
-    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
-    { "src": "/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "خطتي", "url": "/#/portal/plan", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] },
-    { "name": "مواعيدي", "url": "/#/portal/appointments", "icons": [{ "src": "/icons/icon-192.png", "sizes": "192x192" }] }
+    { "name": "خطتي", "url": "/#/portal/plan", "icons": [{ "src": "https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/icon-192.png", "sizes": "192x192" }] },
+    { "name": "مواعيدي", "url": "/#/portal/appointments", "icons": [{ "src": "https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/icon-192.png", "sizes": "192x192" }] }
   ]
 }
