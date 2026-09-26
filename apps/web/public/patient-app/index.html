@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="theme-color" content="#0e7c66">
   <title>تغديتك — تطبيق المريض</title>
-  <link rel="manifest" href="manifest.json">
+  <link rel="manifest" href="/api/portal/manifest" data-fallback="manifest.json">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -14,13 +14,24 @@
 </head>
 <body>
 
+  <!-- شاشة الترحيب (أول مرة) -->
+  <div id="welcome-screen" class="screen" hidden>
+    <img src="images/banner.jpg" alt="تغديتك" class="welcome-img">
+    <div class="welcome-cta">
+      <p>برنامجك الغذائي ومتابعة يومك — كل ذلك من هاتفك</p>
+      <button id="welcome-btn" class="btn-primary">ابدأ</button>
+    </div>
+  </div>
+
   <!-- شاشة الدخول -->
   <div id="login-screen" class="screen">
     <div class="login-card">
-      <img src="icons/icon-192.png" alt="تغديتك" class="login-logo">
-      <h1>تغديتك</h1>
-      <p class="login-brand">إدارة عيادات التغذية</p>
-      <p class="login-sub">ادخل رقم ملفك والرمز الذي أرسلته لك العيادة</p>
+      <img src="images/brand-band.jpg" alt="" class="login-band" id="login-band" hidden>
+      <div class="login-textbrand" id="login-textbrand">
+        <h1 id="login-name">تطبيق المريض</h1>
+        <p class="login-brand">بوابة المرضى</p>
+      </div>
+      <p class="login-sub" id="login-hint">ادخل رقم ملفك والرمز الذي أرسلته لك العيادة</p>
       <label class="field">
         <span>رقم الملف</span>
         <input id="file-input" type="text" inputmode="text" placeholder="NC-0001" autocomplete="off">
@@ -138,7 +149,7 @@
         <div class="card">
           <button id="install-btn" class="sheet-btn" style="display:none">📲 تثبيت التطبيق على الهاتف</button>
           <button id="logout-btn" class="sheet-btn sheet-close" style="margin-top:8px">🚪 تسجيل الخروج</button>
-          <p class="muted small" style="margin-top:10px">تغديتك · تطبيق المريض v1.1 — مرتبط بنظام العيادة مباشرة</p>
+          <p class="muted small" style="margin-top:10px" id="app-footer">تطبيق المريض v1.2 — مرتبط بنظام العيادة مباشرة</p>
         </div>
       </section>
     </main>

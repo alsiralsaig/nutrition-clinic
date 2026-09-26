@@ -35,6 +35,41 @@ router.post('/auth/code', wrap(async (req, res) => {
   await login(req, res, await findAccess({ fileNo, code }));
 }));
 
+// ---------- تعريف العلامة (عام) — يقرؤه تطبيق المريض (PWA) ----------
+router.get('/branding', wrap(async (req, res) => {
+  const s = await getSettings();
+  res.json({
+    name: s['clinic.name'] || 'تطبيق المريض',
+    phone: s['clinic.phone'] || '',
+    address: s['clinic.address'] || '',
+    logo: s['clinic.app_logo'] || '',
+    banner: s['clinic.app_banner'] || '',
+  });
+}));
+
+router.get('/manifest', wrap(async (req, res) => {
+  const s = await getSettings();
+  const name = s['clinic.name'] || 'تطبيق المريض';
+  res.json({
+    name: `${name} — تطبيق المريض`,
+    short_name: name.length > 12 ? name.slice(0, 12) : name,
+    description: `برنامجك الغذائي، متابعة الماء والنوم والنشاط، مواعيدك، وتواصل مع ${name}`,
+    start_url: '/patient-app/index.html',
+    scope: '/patient-app/',
+    display: 'standalone',
+    orientation: 'portrait',
+    dir: 'rtl',
+    lang: 'ar',
+    background_color: '#47704c',
+    theme_color: '#0e7c66',
+    icons: [
+      { src: '/patient-app/icons/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+      { src: '/patient-app/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+      { src: '/patient-app/icons/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+    ],
+  });
+}));
+
 // ---------- كل ما بعده للمريض المسجّل فقط ----------
 router.use(patientRequired);
 const me = (req) => req.patient.id;

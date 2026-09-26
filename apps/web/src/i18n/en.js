@@ -1389,6 +1389,12 @@ export default {
   "التاريخ الطبي:": "Medical history:",
   "أدوية: {0}": "Medications: {0}",
   "فصيلة الدم {0}": "Blood type {0}",
+  // ---- تطبيق المريض (PWA) ----
+  "لوجو تطبيق المريض (رابط صورة)": "Patient app logo (image URL)",
+  "يظهر أعلى شاشة دخول تطبيق الجوال (مقاس موصى به 1080×404). اتركه فارغاً ليظهر اسم العيادة نصاً": "Shown at the top of the mobile app's login screen (recommended 1080×404). Leave empty to show the clinic name as text",
+  "https://… أو images/brand-band.jpg": "https://… or images/brand-band.jpg",
+  "صورة ترحيب التطبيق (رابط صورة)": "App welcome image (image URL)",
+  "شاشة الترحيب عند أول فتح لتطبيق الجوال (مقاس موصى به 1080×1080). اتركه فارغاً للصورة الافتراضية": "Welcome screen on first launch of the mobile app (recommended 1080×1080). Leave empty for the default image",
   // ---- الألياف والماء ----
   "ألياف": "Fibre",
   "· ألياف": "· fibre",

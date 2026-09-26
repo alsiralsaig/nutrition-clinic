@@ -209,6 +209,7 @@ function ClinicTab({ data, isAdmin, reload }) {
   const [form, setForm] = useState({
     'clinic.name': '', 'clinic.phone': '', 'clinic.address': '', 'clinic.currency': 'SDG',
     'clinic.weekend': 'Friday', 'clinic.printFooter': '',
+    'clinic.app_logo': '', 'clinic.app_banner': '',
   });
   const [workday, setWorkday] = useState({ from: '09:00', to: '20:00' });
 
@@ -240,6 +241,12 @@ function ClinicTab({ data, isAdmin, reload }) {
           </div>
           <Field label="نص تذييل التقارير" className="sm:col-span-2">
             <Textarea value={form['clinic.printFooter']} disabled={!isAdmin} onChange={(e) => setForm({ ...form, 'clinic.printFooter': e.target.value })} />
+          </Field>
+          <Field label="لوجو تطبيق المريض (رابط صورة)" hint="يظهر أعلى شاشة دخول تطبيق الجوال (مقاس موصى به 1080×404). اتركه فارغاً ليظهر اسم العيادة نصاً">
+            <Input dir="ltr" value={form['clinic.app_logo']} disabled={!isAdmin} placeholder="https://… أو images/brand-band.jpg" onChange={(e) => setForm({ ...form, 'clinic.app_logo': e.target.value })} />
+          </Field>
+          <Field label="صورة ترحيب التطبيق (رابط صورة)" hint="شاشة الترحيب عند أول فتح لتطبيق الجوال (مقاس موصى به 1080×1080). اتركه فارغاً للصورة الافتراضية">
+            <Input dir="ltr" value={form['clinic.app_banner']} disabled={!isAdmin} placeholder="https://…" onChange={(e) => setForm({ ...form, 'clinic.app_banner': e.target.value })} />
           </Field>
         </div>
       </Card>

@@ -5,6 +5,7 @@ const $ = (s) => document.querySelector(s);
 
 const API = "/api";
 const TOKEN_KEY = "pa_token";
+const WELCOME_KEY = "tg_welcomed";
 const DAY_NAMES = ["السبت", "الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة"]; // 0 = السبت (بنفس منطق النظام)
 const ACTIVITY_LABELS = { walk: "مشي", run: "جري", gym: "جيم", cycling: "دراجة", swim: "سباحة", sport: "رياضة", home: "منزل", other: "أخرى" };
 const SLOT_EMOJI = { "الفطور": "🌅", "سناك صباحي": "🍎", "الغداء": "🍲", "سناك عصري": "🥜", "العشاء": "🌙" };
@@ -41,6 +42,45 @@ async function api(path, { method = "GET", body, auth = true } = {}) {
 function sessionExpired() {
   localStorage.removeItem(TOKEN_KEY);
   location.reload();
+}
+
+/* ================= تعريف العلامة (white-label) ================= */
+async function fetchBranding() {
+  try {
+    const r = await fetch(API + "/portal/branding");
+    if (r.ok) return await r.json();
+  } catch (e) { /* دون اتصال — نستخدم الافتراضي */ }
+  return { name: "تطبيق المريض", phone: "", address: "", logo: "", banner: "" };
+}
+
+function applyBranding(b) {
+  state.branding = b;
+  document.title = `${b.name} — تطبيق المريض`;
+
+  /* شاشة الدخول: لوجو مخصص إن وُجد، وإلا اسم العيادة نصاً */
+  const band = $("#login-band"), textBrand = $("#login-textbrand");
+  if (b.logo) {
+    band.src = new URL(b.logo, location.href).href;
+    band.onerror = () => { band.hidden = true; textBrand.hidden = false; $("#login-name").textContent = b.name; };
+    band.hidden = false;
+    textBrand.hidden = true;
+  } else {
+    band.hidden = true;
+    textBrand.hidden = false;
+    $("#login-name").textContent = b.name;
+  }
+
+  /* البانر الترحيبي */
+  if (b.banner) $("#welcome-screen img").src = new URL(b.banner, location.href).href;
+}
+
+/* إن تعذر جلب المانيفست الديناميكي (دون اتصال) نستخدم النسخة الثابتة */
+function ensureManifest() {
+  const l = document.querySelector('link[rel="manifest"]');
+  if (!l || !l.dataset.fallback) return;
+  fetch(API + "/portal/manifest", { method: "HEAD" })
+    .then((r) => { if (!r.ok) l.href = l.dataset.fallback; })
+    .catch(() => { l.href = l.dataset.fallback; });
 }
 
 /* ================= تواريخ ================= */
@@ -116,19 +156,31 @@ async function boot() {
   bindSettings();
   bindTodayControls();
   window.addEventListener("beforeinstallprompt", (e) => { e.preventDefault(); state.installEvt = e; updateInstallBtns(); });
+  ensureManifest();
+  applyBranding(await fetchBranding());
 
-  // 1) رابط QR/واتساب من العيادة
+  // 1) رابط QR/واتساب من العيادة → دخول مباشر دون الترحيب
   const t = new URLSearchParams(location.search).get("t");
   if (t) {
     try { await doLogin({ token: t }); history.replaceState(null, "", location.pathname); return; }
     catch (e) { /* ننتقل للدخول اليدوي مع رسالة */ showLoginHint("تعذر الدخول بالرابط — أدخل رقم الملف والرمز"); }
   }
-  // 2) جلسة محفوظة
+  // 2) جلسة محفوظة → التطبيق مباشرة
   const saved = localStorage.getItem(TOKEN_KEY);
   if (saved) {
     state.token = saved;
     try { state.me = await api("/portal/me"); return enterApp(); }
     catch (e) { localStorage.removeItem(TOKEN_KEY); }
+  }
+  // 3) أول مرة → شاشة الترحيب
+  if (!localStorage.getItem(WELCOME_KEY)) {
+    $("#welcome-screen").hidden = false;
+    $("#login-screen").hidden = true;
+    $("#welcome-btn").addEventListener("click", () => {
+      localStorage.setItem(WELCOME_KEY, "1");
+      $("#welcome-screen").hidden = true;
+      $("#login-screen").hidden = false;
+    });
   }
 }
 
@@ -142,7 +194,8 @@ function enterApp() {
   const m = state.me;
   $("#login-screen").hidden = true;
   $("#app").hidden = false;
-  $("#header-clinic").textContent = m.clinic.name;
+  $("#header-clinic").textContent = m.clinic.name || state.branding?.name;
+  $("#app-footer").textContent = `${m.clinic.name || state.branding?.name} · تطبيق المريض v1.2 — مرتبط بنظام العيادة`;
   $("#header-hello").textContent = `مرحباً، ${m.patient.first_name} 👋`;
   state.weekSel = dayIndexOf(m.now.date);
   renderProgram();

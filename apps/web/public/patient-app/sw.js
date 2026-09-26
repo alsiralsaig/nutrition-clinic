@@ -1,6 +1,6 @@
 /* Service Worker — تطبيق المريض
    الواجهة تُخزَّن للعمل دون اتصال؛ بيانات الـ API لا تُخزَّن أبداً (الحساسية للتحديثات) */
-const CACHE = "patient-app-v2";
+const CACHE = "patient-app-v4";
 const SHELL = [
   "./",
   "./index.html",
@@ -8,7 +8,9 @@ const SHELL = [
   "./app.js",
   "./manifest.json",
   "./icons/icon-192.png",
-  "./icons/icon-512.png"
+  "./icons/icon-512.png",
+  "./images/banner.jpg",
+  "./images/brand-band.jpg"
 ];
 
 self.addEventListener("install", (e) => {

@@ -56,6 +56,7 @@ const ME_WITH_PLAN_FOR_CODE = ME; // نفس البيانات
 
 const calls = [];
 let meState = { ...ME, habits: JSON.parse(JSON.stringify(ME.habits)) };
+const config = { branding: { name: "عيادة تجريبية", phone: "+249912345678", address: "الخرطوم", logo: "", banner: "" } };
 
 function makeFetch() {
   return async (input, init = {}) => {
@@ -63,6 +64,8 @@ function makeFetch() {
     const method = init.method || "GET";
     calls.push({ url, method, body: init.body ? JSON.parse(init.body) : null, auth: init.headers?.Authorization });
     const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
+    if (url.includes("/portal/branding")) return json(config.branding);
+    if (url.includes("/portal/manifest")) return json({ name: config.branding.name });
     if (url.includes("/portal/auth/code")) {
       const ok = meState.patient && init.body && JSON.parse(init.body).file_no === "NC-0009" && JSON.parse(init.body).code === "ABCD-1234";
       if (!ok) return json({ error: "رمز الدخول غير صالح أو أُلغي — اطلب رمزاً جديداً من العيادة" }, 401);
@@ -90,7 +93,7 @@ function makeFetch() {
   };
 }
 
-function buildDom(url) {
+function buildDom(url, { skipWelcome = true } = {}) {
   const dom = new JSDOM(html.replace("<head>", "<head><base href=\"/patient-app/\">"), {
     url,
     runScripts: "outside-only",
@@ -98,6 +101,7 @@ function buildDom(url) {
   });
   const w = dom.window;
   w.localStorage.clear();
+  if (skipWelcome) w.localStorage.setItem("tg_welcomed", "1");
   w.fetch = makeFetch();
   w.Response = Response;
   w.confirm = () => true;
@@ -118,6 +122,9 @@ function check(name, cond) {
   w.eval(appJs);
   await new Promise((r) => setTimeout(r, 50));
   check("شاشة الدخول ظاهرة في البداية", !w.document.querySelector("#login-screen").hidden);
+  check("اسم العيادة من الإعدادات (نصاً) + عنوان الصفحة",
+    w.document.querySelector("#login-name")?.textContent === "عيادة تجريبية" &&
+    w.document.title.includes("عيادة تجريبية"));
   const file = w.document.querySelector("#file-input");
   const code = w.document.querySelector("#code-input");
   file.value = "NC-0009";
@@ -158,12 +165,38 @@ function check(name, cond) {
     ![...w.document.querySelectorAll("#meals-list .meal-name")].some((n) => n.textContent.includes("العشاء")));
 }
 
+/* ---------- 1ح) لوجو مخصص من الإعدادات ---------- */
+{
+  config.branding = { ...config.branding, logo: "images/brand-band.jpg" };
+  const w = buildDom("http://localhost/patient-app/");
+  w.eval(appJs);
+  await new Promise((r) => setTimeout(r, 80));
+  check("لوجو مخصص يظهر بدلاً من النص",
+    !w.document.querySelector("#login-band").hidden && w.document.querySelector("#login-textbrand").hidden);
+  config.branding = { ...config.branding, logo: "" };
+}
+
+/* ---------- 1ب) شاشة الترحيب في أول استخدام ---------- */
+{
+  const w = buildDom("http://localhost/patient-app/", { skipWelcome: false });
+  w.eval(appJs);
+  await new Promise((r) => setTimeout(r, 50));
+  check("أول استخدام: شاشة الترحيب ظاهرة وشاشة الدخول مخفية",
+    !w.document.querySelector("#welcome-screen").hidden && w.document.querySelector("#login-screen").hidden);
+  w.document.querySelector("#welcome-btn").dispatchEvent(new w.Event("click", { bubbles: true }));
+  await new Promise((r) => setTimeout(r, 30));
+  check("زر «ابدأ» ينقل لشاشة الدخول", !w.document.querySelector("#login-screen").hidden);
+  check("لا تظهر الترحيب مرة ثانية", w.localStorage.getItem("tg_welcomed") === "1");
+}
+
 /* ---------- 2) الدخول عبر رابط QR (?t=) ---------- */
 {
-  const w = buildDom("http://localhost/patient-app/?t=QR-TOKEN-123");
+  // حتى دون علم الترحيب: رابط العيادة يجب أن يدخل التطبيق مباشرة
+  const w = buildDom("http://localhost/patient-app/?t=QR-TOKEN-123", { skipWelcome: false });
   w.eval(appJs);
   await new Promise((r) => setTimeout(r, 120));
-  check("رابط QR يسجّل الدخول مباشرة", !w.document.querySelector("#app").hidden);
+  check("رابط QR يسجّل الدخول مباشرة (دون شاشة ترحيب)",
+    !w.document.querySelector("#app").hidden && w.document.querySelector("#welcome-screen").hidden);
   check("الرابط يُنظّف من العنوان", !w.location.search.includes("t="));
 }
 
