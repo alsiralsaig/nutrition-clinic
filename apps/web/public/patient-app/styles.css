@@ -276,3 +276,7 @@ body {
   background: var(--bg); font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; color: var(--text);
 }
 .sheet-close { background: #fdecec; color: var(--danger); }
+/* Keep hidden panels hidden */
+[hidden] {
+  display: none !important;
+}
