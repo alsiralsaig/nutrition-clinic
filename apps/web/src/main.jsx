@@ -2,6 +2,7 @@ import './i18n.js'; // أولاً: يعرّف __t/__tf قبل أي وحدة أخ
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { HashRouter } from 'react-router-dom';
+import { Analytics } from '@vercel/analytics/react';
 import App from './App.jsx';
 import { AppProvider } from './app-context.jsx';
 import { ThemeProvider } from './theme.jsx';
@@ -13,6 +14,7 @@ createRoot(document.getElementById('root')).render(
       <HashRouter>
         <AppProvider>
           <App />
+          <Analytics />
         </AppProvider>
       </HashRouter>
     </ThemeProvider>
