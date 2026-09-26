@@ -1,14 +1,14 @@
 {
-  "name": "تطبيق المريض — عيادة التغذية",
-  "short_name": "عيادتي",
-  "description": "برنامجك الغذائي، متابعة الماء والنوم والنشاط، مواعيدك، وتواصل مع العيادة — بياناتك مباشرة من نظام العيادة",
+  "name": "تغديتك — تطبيق المريض",
+  "short_name": "تغديتك",
+  "description": "برنامجك الغذائي، متابعة الماء والنوم والنشاط، مواعيدك، وتواصل مع العيادة — صحتك... هدفنا",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
   "dir": "rtl",
   "lang": "ar",
-  "background_color": "#f5f8f7",
+  "background_color": "#47704c",
   "theme_color": "#0e7c66",
   "icons": [
     { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
