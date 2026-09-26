@@ -182,6 +182,8 @@ function check(name, cond) {
     !w.document.querySelector("#login-band").hidden && w.document.querySelector("#login-textbrand").hidden);
   check("أيقونة آيفون تتحدث للوجو المخصص",
     w.document.querySelector("#apple-icon").getAttribute("href").includes("brand-band.jpg"));
+  check("أيقونة الترويسة (أعلى التطبيق) تتبع اللوجو",
+    w.document.querySelector("#header-icon")?.getAttribute("src").includes("brand-band.jpg"));
   config.branding = { ...config.branding, logo: "" };
 }
 

@@ -81,6 +81,13 @@ function applyBranding(b) {
     const ai = $("#apple-icon"); if (ai) ai.href = u;
     const bi = $("#brand-icon"); if (bi) bi.href = u;
   }
+  /* أيقونة الترويسة (أعلى التطبيق): لوجو العيادة أو الأيقونة الافتراضية */
+  const hi = $("#header-icon");
+  if (hi) {
+    hi.onerror = () => { hi.onerror = null; hi.src = "icons/icon-192.png"; };
+    hi.onload = () => { hi.style.objectPosition = hi.naturalWidth > hi.naturalHeight * 1.5 ? "42% 50%" : "50% 50%"; };
+    hi.src = b.logo ? new URL(b.logo, location.href).href : "icons/icon-192.png";
+  }
 }
 
 /* تلميح التثبيت على الهاتف (يظهر مرة واحدة لكل جهاز) */

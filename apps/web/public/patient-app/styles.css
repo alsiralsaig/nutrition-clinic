@@ -92,6 +92,13 @@ body {
   background: linear-gradient(160deg, var(--green), var(--green-dark));
   color: #fff; position: sticky; top: 0; z-index: 10;
 }
+.header-top { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.header-icon {
+  width: 40px; height: 40px; border-radius: 11px; flex-shrink: 0;
+  object-fit: cover; object-position: 50% 50%;
+  background: #fff; border: 2px solid rgba(255, 255, 255, .65);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, .18);
+}
 .clinic { font-size: 12.5px; opacity: .85; }
 .hello { font-size: 17.5px; font-weight: 700; margin-top: 2px; }
 .icon-btn {
