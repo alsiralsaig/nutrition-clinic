@@ -32,8 +32,33 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&amp;family=Cairo:wght@400;600;700&amp;display=swap" rel="stylesheet">
+  <style>
+    /* البانر الافتتاحي: يظهر أولاً لثوانٍ ثم يفتح التطبيق */
+    #nc-splash{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f3f7f6;transition:opacity .45s ease,visibility .45s ease;cursor:pointer}
+    #nc-splash .bg{position:absolute;inset:-40px;background:url(/icons/splash-banner-v1.jpg) center/cover no-repeat;filter:blur(28px) saturate(1.1);opacity:.7}
+    #nc-splash img{position:relative;width:100%;height:100%;max-width:100vh;object-fit:contain;animation:nc-splash-in .6s ease both}
+    #nc-splash.hide{opacity:0;visibility:hidden}
+    @keyframes nc-splash-in{from{opacity:0;transform:scale(1.03)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){#nc-splash img{animation:none}}
+  </style>
  </head>
  <body class="bg-sand">
+  <div id="nc-splash" aria-hidden="true"><div class="bg"></div><img src="/icons/splash-banner-v1.jpg" alt="" /></div>
+  <script>
+    // الجوال يعرض شاشة اللوجو الخاصة به أولاً أثناء التحميل؛ البانر يبقى 2.5 ثانية بعد اكتمال تحميل الصفحة
+    (function () {
+      var SHOW = 2500, done = false;
+      function hide() {
+        if (done) return; done = true;
+        var s = document.getElementById('nc-splash'); if (!s) return;
+        s.classList.add('hide'); setTimeout(function () { s.remove(); }, 600);
+      }
+      document.getElementById('nc-splash').addEventListener('click', hide);
+      function later() { setTimeout(hide, SHOW); }
+      if (document.readyState === 'complete') later(); else window.addEventListener('load', later);
+      setTimeout(hide, 12000);
+    })();
+  </script>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
  </body>
