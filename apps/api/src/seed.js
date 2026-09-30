@@ -76,6 +76,20 @@ export async function ensureSeed({ quiet = false, forceDemo = false } = {}) {
   const log = (...a) => { if (!quiet) console.log(...a); };
   const demo = SEED_DEMO || forceDemo;
 
+  // استعادة حساب المدير عند نسيان كلمة المرور:
+  // ضع ADMIN_RESET_PASSWORD في إعدادات Vercel ← Redeploy ← ادخل بها ← ثم احذف المتغيّر.
+  const resetPw = process.env.ADMIN_RESET_PASSWORD;
+  if (resetPw && String(resetPw).length >= 8) {
+    const admin = await db.get(`SELECT id FROM users WHERE lower(username) = 'admin'`);
+    if (admin) {
+      await db.run(`UPDATE users SET password_hash = ?, active = 1, role = 'admin' WHERE id = ?`, hashPassword(String(resetPw)), admin.id);
+    } else {
+      await db.run(`INSERT INTO users (username, password_hash, full_name, role, active) VALUES (?,?,?,?,1)`,
+        'admin', hashPassword(String(resetPw)), 'مدير العيادة', 'admin');
+    }
+    console.warn('  ⚠ ADMIN_RESET_PASSWORD: أُعيد تعيين كلمة مرور admin — احذف المتغيّر بعد الدخول');
+  }
+
   // مسار سريع دون قفل: النظام مبذور مسبقاً
   const pre = await db.get(`SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM patients) AS patients`);
   if (pre.users > 0 && (!demo || pre.patients > 0) && !forceDemo) return;
