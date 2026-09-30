@@ -72,13 +72,16 @@ const daysAhead = (n) => daysAgo(-n);
  */
 export const SEED_DEMO = process.env.SEED_DEMO ? process.env.SEED_DEMO === '1' : !PRODUCTION_DB;
 
-export async function ensureSeed({ quiet = false, forceDemo = false } = {}) {
-  const log = (...a) => { if (!quiet) console.log(...a); };
-  const demo = SEED_DEMO || forceDemo;
+export async function ensureSeed(opts = {}) {
+  await seedOnce(opts);
+  await applyAdminReset();
+}
 
+/** استعادة حساب المدير عند نسيان كلمة المرور (بعد البذر، كي لا تتأثر البذرة الأولى) */
+async function applyAdminReset() {
   // استعادة حساب المدير عند نسيان كلمة المرور:
   // ضع ADMIN_RESET_PASSWORD في إعدادات Vercel ← Redeploy ← ادخل بها ← ثم احذف المتغيّر.
-  const resetPw = process.env.ADMIN_RESET_PASSWORD;
+  const resetPw = (process.env.ADMIN_RESET_PASSWORD || '').trim();
   if (resetPw && String(resetPw).length >= 8) {
     const admin = await db.get(`SELECT id FROM users WHERE lower(username) = 'admin'`);
     if (admin) {
@@ -89,6 +92,11 @@ export async function ensureSeed({ quiet = false, forceDemo = false } = {}) {
     }
     console.warn('  ⚠ ADMIN_RESET_PASSWORD: أُعيد تعيين كلمة مرور admin — احذف المتغيّر بعد الدخول');
   }
+}
+
+async function seedOnce({ quiet = false, forceDemo = false } = {}) {
+  const log = (...a) => { if (!quiet) console.log(...a); };
+  const demo = SEED_DEMO || forceDemo;
 
   // مسار سريع دون قفل: النظام مبذور مسبقاً
   const pre = await db.get(`SELECT (SELECT COUNT(*) FROM users) AS users, (SELECT COUNT(*) FROM patients) AS patients`);

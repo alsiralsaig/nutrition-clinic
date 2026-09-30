@@ -115,14 +115,14 @@ export default function Login() {
           <div className="mt-6 grid gap-4">
             <label className="block">
               <span className="label">اسم المستخدم</span>
-              <Input autoFocus autoComplete="username" value={form.username}
+              <Input autoFocus autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.username}
                 onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="admin" />
             </label>
 
             <label className="block">
               <span className="label">كلمة المرور</span>
               <div className="relative">
-                <Input type={show ? 'text' : 'password'} autoComplete="current-password"
+                <Input type={show ? 'text' : 'password'} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false}
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   placeholder="••••••••" className="pe-11" />

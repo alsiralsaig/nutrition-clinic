@@ -13,7 +13,10 @@ router.post('/login', wrap(async (req, res) => {
   const password = req.body.password == null ? '' : String(req.body.password);
   if (!username || !password) throw badRequest('اسم المستخدم وكلمة المرور مطلوبان');
   const user = await db.get(`SELECT * FROM users WHERE lower(username) = ?`, username);
-  if (!user || !checkPassword(password, user.password_hash)) throw badRequest('اسم المستخدم أو كلمة المرور غير صحيحة');
+  // لوحة مفاتيح الجوال قد تضيف مسافة في آخر الكلمة — نجرّب الكلمة كما هي ثم بدون المسافات الطرفية
+  const ok = user && (checkPassword(password, user.password_hash)
+    || (password.trim() !== password && password.trim() && checkPassword(password.trim(), user.password_hash)));
+  if (!ok) throw badRequest('اسم المستخدم أو كلمة المرور غير صحيحة');
   if (!user.active) throw conflict('هذا الحساب موقوف — راجع مدير النظام');
   await touchLogin(user.id);
   res.json({ token: signToken(user), token_type: 'Bearer', expires_in: TTL, user: publicUser(user) });

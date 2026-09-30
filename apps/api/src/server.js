@@ -82,6 +82,7 @@ app.get('/api/health', async (req, res, next) => {
       engine: DRIVER,                 // postgres (Neon/حقيقي) أو pglite (مدمج)
       production_db: PRODUCTION_DB,
       demo_data: SEED_DEMO,
+      admin_reset_active: !!(process.env.ADMIN_RESET_PASSWORD || '').trim(), // لا تُعرض القيمة أبداً
       db: DB_LABEL,
       db_latency_ms: Date.now() - t0,
       counts,
