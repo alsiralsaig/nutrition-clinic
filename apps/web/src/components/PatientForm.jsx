@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useApp } from '../app-context.jsx';
 import { Field, Icon, Input, Modal, Select, Textarea, Toggle } from './ui.jsx';
 import { ACTIVITY_LEVELS, VoiceNoteButton, appendText } from './Smart.jsx';
+import BirthDateWheel from './BirthDateWheel.jsx';
 import { GENDERS, fmt, todayISO } from '../format.js';
 
 const EMPTY = {
@@ -106,7 +107,7 @@ export default function PatientForm({ open, onClose, patient, onSaved }) {
           <Field label="اللقب" error={errors.last_name}><Input value={form.last_name} onChange={set('last_name')} placeholder="مثال: الطيب" /></Field>
           <Field label="الهاتف" error={errors.phone} hint="يُستخدم في البحث السريع والتواصل"><Input value={form.phone} onChange={set('phone')} placeholder="09…" inputMode="tel" /></Field>
           <Field label="تاريخ الميلاد" error={errors.birth_date} hint={age != null ? `العمر ${age} سنة` : undefined}>
-            <Input type="date" max={todayISO()} value={form.birth_date} onChange={set('birth_date')} />
+            <BirthDateWheel value={form.birth_date} onChange={set('birth_date')} />
           </Field>
           <Field label="الجنس"><Select value={form.gender} onChange={set('gender')}>{Object.entries(GENDERS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>
           <Field label="حالة الملف"><Select value={form.status} onChange={set('status')}>
