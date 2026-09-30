@@ -269,3 +269,60 @@ body {
   background: var(--bg); font-size: 14.5px; font-weight: 700; cursor: pointer; font-family: inherit; color: var(--text);
 }
 .sheet-close { background: #fdecec; color: var(--danger); }
+
+/* ===== أزرار الترويسة + اختيار المظهر ===== */
+.header-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.theme-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 4px; }
+.theme-label { font-weight: 700; font-size: 14.5px; white-space: nowrap; }
+.theme-seg { display: flex; gap: 4px; background: var(--bg); padding: 4px; border-radius: 13px; }
+.theme-seg button {
+  border: none; background: none; padding: 8px 10px; border-radius: 10px; font-size: 12.5px;
+  font-weight: 700; color: var(--muted); cursor: pointer; font-family: inherit; white-space: nowrap;
+}
+.theme-seg button.active { background: var(--green); color: #fff; }
+
+/* ===== الوضع الداكن ===== */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --green: #11866f;
+  --green-dark: #6fd6bb;       /* يُستخدم كلون نص مميّز */
+  --green-light: #173a33;
+  --bg: #0b1412;
+  --card: #14211e;
+  --text: #e4eeeb;
+  --muted: #95aaa4;
+  --line: #263a35;
+  --shadow: 0 2px 12px rgba(0, 0, 0, 0.35);
+}
+html[data-theme="dark"] .app-header,
+html[data-theme="dark"] #login-screen { background: linear-gradient(160deg, #0e6553, #073a31); }
+html[data-theme="dark"] .btn-primary:active { background: #0a5c4c; }
+html[data-theme="dark"] .save-flash { background: #0a5c4c; color: #fff; }
+html[data-theme="dark"] .login-textbrand h1,
+html[data-theme="dark"] .login-card h1 { color: #7cc9e3; }
+html[data-theme="dark"] .login-textbrand .login-brand,
+html[data-theme="dark"] .login-brand { color: #8fcf9d; }
+html[data-theme="dark"] .field input { border-color: var(--line); background: #0f1a17; }
+html[data-theme="dark"] .field input:focus { border-color: var(--green); }
+html[data-theme="dark"] .install-hint { border-color: #2a4a42; }
+html[data-theme="dark"] .alert-card { background: #3a1c1b; color: #f4b4b0; border-color: #6b2d2a; }
+html[data-theme="dark"] .day-btn,
+html[data-theme="dark"] .btn-quick,
+html[data-theme="dark"] .chip,
+html[data-theme="dark"] .wl-form input,
+html[data-theme="dark"] .wl-form select { background: var(--card); border-color: var(--line); }
+html[data-theme="dark"] .day-btn.active,
+html[data-theme="dark"] .chip.active { background: var(--green); border-color: var(--green); }
+html[data-theme="dark"] .day-btn.today { border-color: var(--amber); }
+html[data-theme="dark"] .progress { background: #22332f; }
+html[data-theme="dark"] .sum-val.good { color: #62cf90; }
+html[data-theme="dark"] .btn-cancel,
+html[data-theme="dark"] .past-status.s-cancelled,
+html[data-theme="dark"] .sheet-close { background: #3a1c1b; color: #f08c87; }
+html[data-theme="dark"] .past-status.s-completed { background: var(--green-light); color: var(--green-dark); }
+html[data-theme="dark"] .profile-row { border-bottom-color: var(--line); }
+html[data-theme="dark"] .tabbar { background: #101b18; border-top-color: var(--line); }
+html[data-theme="dark"] .sheet { background: var(--card); }
+html[data-theme="dark"] .sheet-row { border-bottom-color: var(--line); }
+html[data-theme="dark"] .overlay { background: rgba(0, 0, 0, .6); }
+html[data-theme="dark"] .meal-macros span { color: var(--green-dark); }

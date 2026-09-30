@@ -26,8 +26,45 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="stylesheet" href="styles.css">
+  <script>
+    // المظهر (فاتح/داكن) قبل أي رسم — لا وميض
+    (function () {
+      try {
+        var t = localStorage.getItem('tg_theme') || 'system';
+        var dark = t === 'dark' || (t === 'system' && window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches);
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        if (dark) document.querySelector('meta[name="theme-color"]').setAttribute('content', '#083f35');
+      } catch (e) {}
+    })();
+  </script>
+  <style>
+    /* البانر الافتتاحي: يظهر أولاً لثوانٍ ثم يفتح التطبيق */
+    #nc-splash{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;overflow:hidden;background:#f3f7f6;transition:opacity .45s ease,visibility .45s ease;cursor:pointer}
+    html[data-theme="dark"] #nc-splash{background:#0b1412}
+    #nc-splash .bg{position:absolute;inset:-40px;background:url(images/banner.jpg) center/cover no-repeat;filter:blur(28px) saturate(1.1);opacity:.7}
+    #nc-splash img{position:relative;width:100%;height:100%;max-width:100vh;object-fit:contain;animation:nc-splash-in .6s ease both}
+    #nc-splash.hide{opacity:0;visibility:hidden}
+    @keyframes nc-splash-in{from{opacity:0;transform:scale(1.03)}to{opacity:1;transform:none}}
+    @media (prefers-reduced-motion:reduce){#nc-splash img{animation:none}}
+  </style>
  </head>
  <body>
+  <div id="nc-splash" aria-hidden="true"><div class="bg"></div><img src="images/banner.jpg" alt=""></div>
+  <script>
+    // الجوال يعرض شاشة اللوجو الخاصة به أولاً أثناء التحميل؛ البانر يبقى 2.5 ثانية بعد اكتمال تحميل الصفحة
+    (function () {
+      var SHOW = 2500, done = false;
+      function hide() {
+        if (done) return; done = true;
+        var s = document.getElementById('nc-splash'); if (!s) return;
+        s.classList.add('hide'); setTimeout(function () { s.remove(); }, 600);
+      }
+      document.getElementById('nc-splash').addEventListener('click', hide);
+      function later() { setTimeout(hide, SHOW); }
+      if (document.readyState === 'complete') later(); else window.addEventListener('load', later);
+      setTimeout(hide, 12000);
+    })();
+  </script>
   <!-- شاشة الترحيب (أول مرة) -->
   <div id="welcome-screen" class="screen" hidden>
    <img src="images/banner.jpg" alt="تغديتك" class="welcome-img">
@@ -64,7 +101,7 @@
       <div class="hello" id="header-hello"></div>
      </div>
     </div>
-    <button id="settings-btn" class="icon-btn" title="خيارات">⚙️</button>
+    <div class="header-actions"><button id="theme-btn" class="icon-btn" title="الوضع الداكن / الفاتح" aria-label="الوضع الداكن / الفاتح">🌙</button><button id="settings-btn" class="icon-btn" title="خيارات">⚙️</button></div>
    </header>
    <main id="content">
     <!-- البرنامج -->
@@ -165,6 +202,14 @@
    <div class="sheet">
     <div class="sheet-row">
      <span>👤</span><span id="sheet-patient-name"></span>
+    </div>
+    <div class="theme-row">
+     <span class="theme-label">🌗 المظهر</span>
+     <div class="theme-seg" id="theme-seg">
+      <button data-theme-opt="light">☀️ فاتح</button>
+      <button data-theme-opt="dark">🌙 داكن</button>
+      <button data-theme-opt="system">📱 تلقائي</button>
+     </div>
     </div>
     <button id="sheet-install" class="sheet-btn">📲 تثبيت التطبيق على الهاتف</button>
     <button id="sheet-logout" class="sheet-btn">🚪 تسجيل الخروج (أو مريض آخر)</button>

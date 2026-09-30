@@ -584,6 +584,32 @@ function doLogout() {
   localStorage.removeItem(TOKEN_KEY);
   location.reload();
 }
+/* ================= المظهر (فاتح / داكن / تلقائي) ================= */
+const THEME_KEY = "tg_theme";
+function themePref() { return localStorage.getItem(THEME_KEY) || "system"; }
+function isDark(pref) {
+  return pref === "dark" || (pref === "system" && window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+}
+function applyTheme() {
+  const pref = themePref(), dark = isDark(pref);
+  document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+  const tc = document.querySelector('meta[name="theme-color"]');
+  if (tc) tc.content = dark ? "#083f35" : "#0e7c66";
+  const tb = $("#theme-btn"); if (tb) tb.textContent = dark ? "☀️" : "🌙";
+  document.querySelectorAll("[data-theme-opt]").forEach((b) => b.classList.toggle("active", b.dataset.themeOpt === pref));
+}
+function setTheme(pref) { localStorage.setItem(THEME_KEY, pref); applyTheme(); }
+function bindTheme() {
+  $("#theme-btn").addEventListener("click", () => setTheme(isDark(themePref()) ? "light" : "dark"));
+  document.querySelectorAll("[data-theme-opt]").forEach((b) => b.addEventListener("click", () => setTheme(b.dataset.themeOpt)));
+  if (window.matchMedia) {
+    const mq = matchMedia("(prefers-color-scheme: dark)");
+    const on = () => { if (themePref() === "system") applyTheme(); };
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+  }
+  applyTheme();
+}
+
 function bindSettings() {
   $("#settings-btn").addEventListener("click", () => {
     const p = state.me?.patient;
@@ -605,4 +631,5 @@ if ("serviceWorker" in navigator) {
   });
 }
 
+bindTheme();
 boot();
