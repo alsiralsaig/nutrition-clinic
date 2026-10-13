@@ -10,7 +10,7 @@ import { useApp } from '../app-context.jsx';
 import { portalApi, portalToken, tokenFromQr } from '../api.js';
 import { ThemeToggle } from '../theme.jsx';
 import { LangToggle, Toasts } from '../components/Layout.jsx';
-import { QrScanner } from '../components/Qr.jsx';
+import { QrScanner, decodeQrFromFile } from '../components/Qr.jsx';
 import { VideoCall, mediaSupported } from '../components/VideoCall.jsx';
 import { HabitChart, PortalWeightChart } from '../components/Charts.jsx';
 import { ACTIVITY_LABELS, TIME_PREFS, WL_DAYS } from '../components/Care.jsx';
@@ -148,6 +148,26 @@ function PortalLogin() {
     loginQr(tok);
   };
 
+  /* اختيار صورة الرمز من ملفات الجهاز (بدل الكاميرا) */
+  const fileRef = useRef(null);
+  const [reading, setReading] = useState(false);
+  const onPickQrImage = async (e) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    setReading(true); setErr('');
+    try {
+      const text = await decodeQrFromFile(file);
+      if (!text) throw new Error('not-found');
+      onScan(text);
+    } catch (ex) {
+      setErr(ex?.message === 'bad-image'
+        ? 'تعذّر فتح هذه الصورة — جرّب صورة أخرى بصيغة JPG أو PNG'
+        : 'لم نتمكن من قراءة الرمز من هذه الصورة — جرّب صورة أوضح للرمز، أو استخدم رقم الملف والرمز');
+      setMode('choose');
+    } finally { setReading(false); }
+  };
+
   return (
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 pb-8 pt-10">
       <div className="mb-6 flex items-center justify-between">
@@ -161,8 +181,11 @@ function PortalLogin() {
         <div className="flex gap-1"><LangToggle /><ThemeToggle /></div>
       </div>
 
-      {mode === 'auto' || (busy && mode !== 'code') ? (
-        <div className="grid flex-1 place-items-center"><Spinner label="جارٍ فتح ملفك…" /></div>
+      {/* اختيار صورة الرمز من ملفات الجهاز — حقل مخفي يُفتح بالزر */}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden" onChange={onPickQrImage} data-portal-qr-file />
+
+      {mode === 'auto' || reading || (busy && mode !== 'code') ? (
+        <div className="grid flex-1 place-items-center"><Spinner label={reading ? 'جارٍ قراءة الرمز من الصورة…' : 'جارٍ فتح ملفك…'} /></div>
       ) : (
         <div className="grid gap-4">
           {err && <p className="rounded-xl border border-clay-500/30 bg-clay-50 px-3 py-2.5 text-[13px] font-bold text-clay-600" role="alert" data-portal-error>{err}</p>}
@@ -170,6 +193,7 @@ function PortalLogin() {
             <div className="grid gap-3 rounded-2xl bg-surface p-4 shadow-card">
               <p className="text-center text-[14px] font-extrabold">وجّه الكاميرا نحو رمز QR في بطاقتك</p>
               <QrScanner onResult={onScan} />
+              <button className="btn-soft" onClick={() => fileRef.current?.click()} data-portal-qr-image>🖼️ اختيار صورة الرمز من الملفات</button>
               <button className="btn-ghost" onClick={() => setMode('choose')}>رجوع</button>
             </div>
           ) : mode === 'code' ? (
@@ -189,6 +213,10 @@ function PortalLogin() {
               <button className="flex items-center gap-4 rounded-2xl bg-brand-600 p-5 text-start text-white shadow-pop transition active:scale-[.98]" onClick={() => setMode('scan')} data-portal-scan>
                 <span className="grid h-14 w-14 place-items-center rounded-xl bg-white/15 text-[28px]">📷</span>
                 <span><span className="block text-[16px] font-extrabold">مسح رمز QR</span><span className="text-[12.5px] font-bold text-white/75">الرمز المطبوع على بطاقتك من العيادة</span></span>
+              </button>
+              <button className="flex items-center gap-4 rounded-2xl bg-surface p-5 text-start shadow-card transition active:scale-[.98]" onClick={() => fileRef.current?.click()} data-portal-qr-image>
+                <span className="grid h-14 w-14 place-items-center rounded-xl bg-brand-50 text-[28px]">🖼️</span>
+                <span><span className="block text-[16px] font-extrabold">اختيار صورة الرمز من الملفات</span><span className="text-[12.5px] font-bold text-ink/50">صورة محفوظة للرمز بدل الكاميرا</span></span>
               </button>
               <button className="flex items-center gap-4 rounded-2xl bg-surface p-5 text-start shadow-card transition active:scale-[.98]" onClick={() => setMode('code')} data-portal-code-login>
                 <span className="grid h-14 w-14 place-items-center rounded-xl bg-brand-50 text-[28px]">🔢</span>

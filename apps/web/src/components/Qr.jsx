@@ -17,6 +17,66 @@ export function QrSvg({ text, size = 220, className = '' }) {
   );
 }
 
+/** تحميل صورة من ملف الجهاز إلى ImageBitmap أو عنصر صورة جاهز للرسم على canvas */
+async function loadImageSource(file) {
+  if (typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(file); } catch { /* نكمل بالطريقة التقليدية */ }
+  }
+  const url = URL.createObjectURL(file);
+  try {
+    const img = await new Promise((res, rej) => {
+      const im = new Image();
+      im.onload = () => res(im);
+      im.onerror = () => rej(new Error('bad-image'));
+      im.src = url;
+    });
+    img.__url = url;
+    return img;
+  } catch (e) {
+    URL.revokeObjectURL(url);
+    throw e;
+  }
+}
+
+/**
+ * قراءة رمز QR من صورة محفوظة يختارها المستخدم من ملفات الجهاز (بدون كاميرا).
+ * ترمي Error('not-found') إن لم يُوجد رمز في الصورة، و Error('bad-image') إن تعذّر فتحها.
+ */
+export async function decodeQrFromFile(file) {
+  if (!file) return null;
+  const src = await loadImageSource(file);
+  try {
+    if ('BarcodeDetector' in window) {
+      try {
+        const det = new window.BarcodeDetector({ formats: ['qr_code'] });
+        const codes = await det.detect(src);
+        if (codes?.[0]?.rawValue) return codes[0].rawValue;
+      } catch { /* نكمل بـ jsQR */ }
+    }
+    const jsQR = (await import('jsqr')).default;
+    const w0 = src.width || src.naturalWidth || 0;
+    const h0 = src.height || src.naturalHeight || 0;
+    if (!w0 || !h0) throw new Error('bad-image');
+    const sizes = [...new Set([Math.min(w0, 1600), 1200, 900, 600, Math.min(w0, 2400)])]
+      .filter((s) => s >= 240 && s <= Math.max(w0 * 2, 2400));
+    for (const w of sizes) {
+      const h = Math.max(1, Math.round((h0 / w0) * w));
+      const c = document.createElement('canvas');
+      c.width = w; c.height = h;
+      const ctx = c.getContext('2d', { willReadFrequently: true });
+      ctx.drawImage(src, 0, 0, w, h);
+      const img = ctx.getImageData(0, 0, w, h);
+      const last = w === sizes[sizes.length - 1];
+      const r = jsQR(img.data, w, h, { inversionAttempts: last ? 'attemptBoth' : 'dontInvert' });
+      if (r?.data) return r.data;
+    }
+    throw new Error('not-found');
+  } finally {
+    try { src.close?.(); } catch { /* */ }
+    if (src.__url) URL.revokeObjectURL(src.__url);
+  }
+}
+
 /**
  * ماسح QR بالكاميرا الخلفية: BarcodeDetector الأصلي (Chrome/Android) أو jsQR كبديل (Safari/iPhone).
  * onResult(text) عند أول قراءة ناجحة.
