@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { useApp } from '../app-context.jsx';
+import { api } from '../api.js';
 import { Icon, Input } from '../components/ui.jsx';
 import { canPromptInstall, isStandalone, onPwaChange, platform, promptInstall } from '../pwa.js';
 
@@ -13,6 +14,10 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const [showInstallHelp, setShowInstallHelp] = useState(false);
+  const [forgot, setForgot] = useState(false);
+  const [recovery, setRecovery] = useState(null); // null = جارٍ التحقق · true/false
+  const [fp, setFp] = useState({ username: 'admin', code: '', password: '', confirm: '' });
+  const [fpBusy, setFpBusy] = useState(false);
   const [, refreshPwa] = useState(0);
   const os = platform();
   const installed = isStandalone();
@@ -20,7 +25,30 @@ export default function Login() {
   useEffect(() => onPwaChange(() => refreshPwa((n) => n + 1)), []);
   useEffect(() => { document.title = 'تسجيل الدخول — عيادة التغذية'; }, []);
 
+  // هل «نسيت كلمة المرور» مفعّلة على الخادم؟ (متغيّر ADMIN_RECOVERY_CODE)
+  useEffect(() => {
+    api.get('/health').then((h) => setRecovery(!!h?.recovery_enabled)).catch(() => setRecovery(false));
+  }, []);
+
   if (user) return <Navigate to={loc.state?.from || '/'} replace />;
+
+  const submitForgot = async (e) => {
+    e.preventDefault();
+    setErr('');
+    if (fp.password.length < 8) { setErr('كلمة المرور الجديدة 8 أحرف على الأقل'); return; }
+    if (fp.password !== fp.confirm) { setErr('كلمتا المرور غير متطابقتين'); return; }
+    setFpBusy(true);
+    try {
+      await api.post('/auth/reset-password', {
+        username: fp.username.trim() || 'admin', code: fp.code.trim(), new_password: fp.password,
+      });
+      const u = await login(fp.username.trim() || 'admin', fp.password);
+      toast(`تم تعيين كلمة المرور — أهلاً ${u.full_name} 👋`, 'good', 6000);
+      nav(loc.state?.from || '/', { replace: true });
+    } catch (ex) {
+      setErr(ex?.message || 'تعذّرت إعادة التعيين');
+    } finally { setFpBusy(false); }
+  };
 
   const submit = async (e) => {
     e.preventDefault();
@@ -146,6 +174,60 @@ export default function Login() {
               : <Icon.shield />}
             {busy ? 'جارٍ التحقق…' : 'دخول'}
           </button>
+
+          {!forgot && (
+            <div className="mt-3 text-center">
+              <button type="button" onClick={() => setForgot(true)}
+                className="text-[12.5px] font-extrabold text-brand-700 underline-offset-2 hover:underline" data-forgot-link>
+                نسيت كلمة المرور؟
+              </button>
+            </div>
+          )}
+
+          {forgot && (
+            <form onSubmit={submitForgot} className="mt-4 grid gap-3 rounded-xl border border-brand-100 bg-brand-50/60 p-3.5" data-forgot-panel>
+              <p className="text-[12.5px] font-extrabold text-brand-800">نسيت كلمة المرور؟</p>
+
+              {recovery === false ? (
+                <ol className="grid list-decimal gap-1 rounded-xl bg-surface p-3 ps-6 text-[12px] font-bold leading-6 text-ink/70">
+                  <li>افتح المشروع في <span className="tnum">Vercel</span>.</li>
+                  <li><span className="font-extrabold">Settings → Environment Variables</span>.</li>
+                  <li>أضف <span className="tnum" dir="ltr">ADMIN_RECOVERY_CODE</span> بقيمة سرية تحتفظ بها أنت فقط.</li>
+                  <li>أعد النشر <span className="tnum">Redeploy</span>، ثم ارجع لهذه الشاشة.</li>
+                </ol>
+              ) : (
+                <>
+                  <label className="block">
+                    <span className="label">اسم المستخدم</span>
+                    <Input dir="ltr" autoComplete="username" value={fp.username}
+                      onChange={(e) => setFp({ ...fp, username: e.target.value })} placeholder="admin" />
+                  </label>
+                  <label className="block">
+                    <span className="label">رمز الاستعادة (ADMIN_RECOVERY_CODE)</span>
+                    <Input dir="ltr" value={fp.code} onChange={(e) => setFp({ ...fp, code: e.target.value })}
+                      placeholder="••••••••" autoComplete="one-time-code" />
+                  </label>
+                  <label className="block">
+                    <span className="label">كلمة المرور الجديدة</span>
+                    <Input type="password" autoComplete="new-password" value={fp.password}
+                      onChange={(e) => setFp({ ...fp, password: e.target.value })} placeholder="8 أحرف على الأقل" />
+                  </label>
+                  <label className="block">
+                    <span className="label">تأكيد كلمة المرور</span>
+                    <Input type="password" autoComplete="new-password" value={fp.confirm}
+                      onChange={(e) => setFp({ ...fp, confirm: e.target.value })} placeholder="أعد كتابتها" />
+                  </label>
+                  <button className="btn-primary !py-2.5" disabled={fpBusy || !fp.code || !fp.password || !fp.confirm}>
+                    {fpBusy ? 'جارٍ التعيين…' : 'تعيين كلمة المرور والدخول'}
+                  </button>
+                </>
+              )}
+
+              <button type="button" className="btn-ghost btn-sm" onClick={() => { setForgot(false); setErr(''); }}>
+                رجوع لتسجيل الدخول
+              </button>
+            </form>
+          )}
 
           <div className="mt-5 rounded-xl border border-dashed border-line bg-sand p-3 text-[11.5px] leading-6 text-ink/55">
             <p className="mb-1 font-extrabold text-ink/70">حسابات التجربة:</p>
