@@ -63,6 +63,7 @@ const limitLogin = (req, res, next) => {
   next();
 };
 app.use('/api/auth/login', limitLogin);
+app.use('/api/auth/reset-password', limitLogin);   // «نسيت كلمة المرور»
 app.use('/api/portal/auth', limitLogin);   // دخول المريض بالـ QR/الرمز
 
 // كل مسارات الـ API تنتظر جاهزية القاعدة (الملفات الثابتة لا تنتظر)
@@ -86,6 +87,7 @@ app.get('/api/health', async (req, res, next) => {
       db: DB_LABEL,
       db_latency_ms: Date.now() - t0,
       counts,
+      recovery_enabled: !!String(process.env.ADMIN_RECOVERY_CODE || '').trim(),
     });
   } catch (e) { next(e); }
 });

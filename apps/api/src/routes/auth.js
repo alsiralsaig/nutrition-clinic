@@ -1,8 +1,18 @@
 // الحماية: دخول، جلسة، تغيير كلمة المرور، إدارة المستخدمين (للمدير فقط)
 import { Router } from 'express';
 import { db, audit } from '../db.js';
-import { badRequest, conflict, notFound, str, wrap } from '../lib.js';
+import { badRequest, conflict, notFound, str, wrap, HttpError } from '../lib.js';
 import { authRequired, adminOnly, signToken, hashPassword, checkPassword, touchLogin, TTL, DEFAULT_ADMIN_PASSWORD } from '../auth.js';
+import { createHash, timingSafeEqual } from 'node:crypto';
+
+/** «نسيت كلمة المرور»: رمز سرّي واحد (ADMIN_RECOVERY_CODE) يسمح بتعيين كلمة مرور جديدة والدخول مباشرة. */
+function recoveryCodeOk(code) {
+  const expected = (process.env.ADMIN_RECOVERY_CODE || '').trim();
+  if (!expected) throw new HttpError(501, 'رمز الاستعادة غير مضبوط — أضف ADMIN_RECOVERY_CODE في متغيرات Vercel ثم أعد النشر');
+  const a = createHash('sha256').update(String(code || '').trim()).digest();
+  const b = createHash('sha256').update(expected).digest();
+  return a.length === b.length && timingSafeEqual(a, b);
+}
 
 export const router = Router();
 
@@ -18,6 +28,21 @@ router.post('/login', wrap(async (req, res) => {
     || (password.trim() !== password && password.trim() && checkPassword(password.trim(), user.password_hash)));
   if (!ok) throw badRequest('اسم المستخدم أو كلمة المرور غير صحيحة');
   if (!user.active) throw conflict('هذا الحساب موقوف — راجع مدير النظام');
+  await touchLogin(user.id);
+  res.json({ token: signToken(user), token_type: 'Bearer', expires_in: TTL, user: publicUser(user) });
+}));
+
+router.post('/reset-password', wrap(async (req, res) => {
+  const code = req.body.code == null ? '' : String(req.body.code);
+  const next = req.body.new_password == null ? '' : String(req.body.new_password);
+  const username = (str(req.body.username, 60) || 'admin').toLowerCase();
+  if (!code || !next) throw badRequest('أدخل رمز الاستعادة وكلمة المرور الجديدة');
+  if (next.length < 8) throw badRequest('كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف');
+  if (!recoveryCodeOk(code)) throw new HttpError(401, 'رمز الاستعادة غير صحيح');
+  const user = await db.get(`SELECT * FROM users WHERE lower(username) = ?`, username);
+  if (!user) throw notFound('المستخدم غير موجود');
+  await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, hashPassword(next), user.id);
+  await audit({ userId: user.id, action: 'auth.reset_password', entity: 'users', entityId: user.id });
   await touchLogin(user.id);
   res.json({ token: signToken(user), token_type: 'Bearer', expires_in: TTL, user: publicUser(user) });
 }));
