@@ -113,16 +113,6 @@ export default function Login() {
             {busy ? 'جارٍ التحقق…' : 'دخول'}
           </button>
 
-          <div className="mt-5 rounded-xl border border-dashed border-line bg-sand p-3 text-[11.5px] leading-6 text-ink/55">
-            <p className="mb-1 font-extrabold text-ink/70">حسابات التجربة:</p>
-            {[['admin', 'admin123', 'مدير — كل الصلاحيات'], ['doctor', 'doctor123', 'أخصائي — تعديل دون إدارة المستخدمين'], ['reception', 'reception123', 'مشاهدة فقط']].map(([u, p, d]) => (
-              <button type="button" key={u} onClick={() => setForm({ username: u, password: p })}
-                className="flex w-full items-center justify-between rounded-lg px-2 py-1 text-start hover:bg-surface">
-                <span className="tnum font-bold">{u} / {p}</span>
-                <span>{d}</span>
-              </button>
-            ))}
-          </div>
         </form>
       </div>
     </div>

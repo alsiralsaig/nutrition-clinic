@@ -534,7 +534,6 @@ export default {
   "إظهار": "Show",
   "جارٍ التحقق…": "Verifying…",
   "دخول": "Sign in",
-  "حسابات التجربة:": "Demo accounts:",
   "مدير — كل الصلاحيات": "Admin — full permissions",
   "أخصائي — تعديل دون إدارة المستخدمين": "Dietitian — editing without user management",
   "نظرة": "Overview",
