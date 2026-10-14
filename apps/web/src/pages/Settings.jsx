@@ -64,7 +64,8 @@ export default function Settings() {
             <Table head={['المستخدم', 'الاسم', 'الدور', 'الحالة', 'آخر دخول', '']}>
               {data.users.map((u) => (
                 <tr key={u.id} className="group">
-                  <td className="font-extrabold">{u.username}{u.id === user.id && <Badge tone="info" className="ms-2">أنت</Badge>}</td>
+                  <td className="font-extrabold">{u.username}{u.id === user.id && <Badge tone="info" className="ms-2">أنت</Badge>}
+                    {u.phone && <span className="block text-[11px] font-bold text-ink/45" dir="ltr">{u.phone}</span>}</td>
                   <td>{u.full_name}</td>
                   <td><Badge tone={u.role === 'admin' ? 'good' : u.role === 'staff' ? 'info' : 'warn'}>{ROLES[u.role]}</Badge></td>
                   <td>{u.active ? <Badge tone="good">نشط</Badge> : <Badge tone="bad">موقوف</Badge>}</td>
@@ -284,6 +285,8 @@ function UserModal({ state, onClose, reload, isAdmin, me }) {
     active: state?.active ?? true,
     password: '',
     current_password: '',
+    phone: state?.phone || '',
+    pin: '',
   });
   const [busy, setBusy] = useState(false);
 
@@ -306,15 +309,19 @@ function UserModal({ state, onClose, reload, isAdmin, me }) {
     } else if (form.password && form.password.length < 8) {
       toast('كلمة المرور الجديدة قصيرة', 'bad'); return;
     }
+    if (form.pin && !/^\d{4,6}$/.test(form.pin)) { toast('رمز الدخول (PIN): من 4 إلى 6 أرقام', 'bad'); return; }
+    if (form.phone.trim() && !/^[\d+\s\-().]+$/.test(form.phone.trim())) { toast('رقم التلفون غير صحيح', 'bad'); return; }
     setBusy(true);
     try {
       if (isNew) {
         await run(() => api.post('/auth/users', {
           username: form.username.trim(), full_name: form.full_name.trim(), role: form.role, password: form.password,
+          phone: form.phone.trim(), pin: form.pin.trim(),
         }), { ok: 'تم إنشاء المستخدم' });
       } else {
-        const body = { full_name: form.full_name.trim(), role: form.role, active: !!form.active };
+        const body = { full_name: form.full_name.trim(), role: form.role, active: !!form.active, phone: form.phone.trim() };
         if (form.password) body.password = form.password;
+        if (form.pin) body.pin = form.pin;
         await run(() => api.put(`/auth/users/${state.id}`, body), { ok: 'تم التحديث' });
       }
       onClose();
@@ -345,7 +352,13 @@ function UserModal({ state, onClose, reload, isAdmin, me }) {
                 <option value="viewer">مشاهدة فقط — للاستقبال والتقارير</option>
               </Select></Field>
             )}
-            <Field label={isNew ? 'كلمة المرور' : 'كلمة مرور جديدة (اتركها فارغة لعدم التغيير)'} hint={isNew ? '8 أحرف على الأقل' : undefined}>
+            <Field label="رقم التلفون (للدخول به)" hint="مثال: 0913009060">
+              <Input inputMode="tel" value={form.phone} onChange={set('phone')} placeholder="09XXXXXXXX" dir="ltr" />
+            </Field>
+            <Field label={isNew ? 'رمز الدخول PIN (اختياري)' : 'رمز دخول جديد PIN (اتركه فارغاً لعدم التغيير)'} hint="من 4 إلى 6 أرقام — الدخول برقم التلفون و PIN">
+              <Input inputMode="numeric" type="text" value={form.pin} onChange={set('pin')} placeholder="••••" dir="ltr" />
+            </Field>
+            <Field label={isNew ? 'كلمة المرور (بديل عن PIN)' : 'كلمة مرور جديدة (اتركها فارغة لعدم التغيير)'} hint={isNew ? '8 أحرف على الأقل — أو اكتفِ بـ PIN' : undefined}>
               <Input type="text" value={form.password} onChange={set('password')} placeholder="••••••••" dir="ltr" />
             </Field>
             {!isNew && isAdmin && <Toggle checked={form.active} onChange={set('active')} label="الحساب نشط" />}

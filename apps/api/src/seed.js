@@ -78,6 +78,19 @@ export async function ensureSeed(opts = {}) {
 }
 
 /** استعادة حساب المدير عند نسيان كلمة المرور (بعد البذر، كي لا تتأثر البذرة الأولى) */
+/** ضبط دخول المدير برقم التلفون و PIN: ضع ADMIN_PHONE و ADMIN_PIN في إعدادات Vercel ← Redeploy ← ادخل بهما */
+function normPhoneSeed(raw) {
+  let s = String(raw || '').trim()
+    .replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0))
+    .replace(/[\s\-().]/g, '');
+  if (s.startsWith('+')) s = s.slice(1);
+  if (s.startsWith('00249')) s = s.slice(5);
+  else if (s.startsWith('249')) s = s.slice(3);
+  if (s.startsWith('0')) s = s.slice(1);            // 0913009060 → 913009060
+  return s;
+}
+
 async function applyAdminReset() {
   // استعادة حساب المدير عند نسيان كلمة المرور:
   // ضع ADMIN_RESET_PASSWORD في إعدادات Vercel ← Redeploy ← ادخل بها ← ثم احذف المتغيّر.
@@ -91,6 +104,24 @@ async function applyAdminReset() {
         'admin', hashPassword(String(resetPw)), 'مدير العيادة', 'admin');
     }
     console.warn('  ⚠ ADMIN_RESET_PASSWORD: أُعيد تعيين كلمة مرور admin — احذف المتغيّر بعد الدخول');
+  }
+
+  // دخول المدير بالتلفون و PIN — نفس آلية الطوارئ
+  const adminPhoneRaw = (process.env.ADMIN_PHONE || '').trim();
+  const adminPin = (process.env.ADMIN_PIN || '').trim();
+  if (adminPhoneRaw && /^\d{4,6}$/.test(adminPin)) {
+    const ph = normPhoneSeed(adminPhoneRaw);
+    if (/^9\d{8}$/.test(ph) || /^1\d{8}$/.test(ph)) {
+      const a = await db.get(`SELECT id FROM users WHERE lower(username) = 'admin'`);
+      if (a) {
+        await db.run(`UPDATE users SET phone=?, phone_norm=?, password_hash=?, active=1 WHERE id=?`,
+          adminPhoneRaw, ph, hashPassword(adminPin), a.id);
+      } else {
+        await db.run(`INSERT INTO users (username, password_hash, full_name, role, active, phone, phone_norm) VALUES (?,?,?,?,1,?,?)`,
+          'admin', hashPassword(adminPin), 'مدير العيادة', 'admin', adminPhoneRaw, ph);
+      }
+      console.warn('  ⚠ ADMIN_PHONE/ADMIN_PIN: دخول المدير بالتلفون مفعّل — احذف المتغيّرين بعد التأكد');
+    }
   }
 }
 

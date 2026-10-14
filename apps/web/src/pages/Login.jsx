@@ -9,7 +9,9 @@ export default function Login() {
   const { user, login, toast } = useApp();
   const nav = useNavigate();
   const loc = useLocation();
+  const [mode, setMode] = useState('phone'); // phone = رقم التلفون و PIN (الافتراضي) · username = الاسم وكلمة المرور
   const [form, setForm] = useState({ username: '', password: '' });
+  const digits = (v) => v.replace(/[\u0660-\u0669]/g, (d) => String('٠١٢٣٤٥٦٧٨٩'.indexOf(d))).replace(/[\u06F0-\u06F9]/g, (d) => String('۰۱۲۳۴۵۶۷۸۹'.indexOf(d))).replace(/\D/g, '');
   const [show, setShow] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -55,6 +57,11 @@ export default function Login() {
     setBusy(true);
     setErr('');
     try {
+      if (mode === 'phone') {
+        const phone = form.username.trim();
+        if (digits(phone).length < 9) { setErr('أدخل رقم تلفون صحيح — مثال: 0913009060'); setBusy(false); return; }
+        if (!/^\d{4,6}$/.test(digits(form.password))) { setErr('رمز الدخول: من 4 إلى 6 أرقام'); setBusy(false); return; }
+      }
       const u = await login(form.username.trim(), form.password);
       toast(`أهلاً ${u.full_name} 👋`, 'good');
       nav(loc.state?.from || '/', { replace: true });
@@ -96,6 +103,7 @@ export default function Login() {
             <img src={logoUrl} alt="شعار تغذيتك"
               className="mx-auto h-16 w-16 rounded-2xl object-contain" />
             <p className="mt-2 text-[16px] font-extrabold">نظام عيادة التغذية</p>
+            <p className="mt-0.5 text-[12px] font-bold text-ink/50">تسجيل الدخول برقم التلفون</p>
           </div>
 
           {!installed && (
@@ -141,13 +149,29 @@ export default function Login() {
           <p className="muted mt-1">أدخل اسم المستخدم وكلمة المرور الخاصين بالموظف.</p>
 
           <div className="mt-6 grid gap-4">
-            <label className="block">
-              <span className="label">اسم المستخدم</span>
-              <Input autoFocus autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="admin" />
-            </label>
+            {mode === 'phone' ? (
+              <>
+                <label className="block">
+                  <span className="label">رقم التلفون</span>
+                  <Input autoFocus inputMode="tel" autoComplete="tel" dir="ltr" className="text-left" value={form.username}
+                    onChange={(e) => setForm({ ...form, username: digits(e.target.value).slice(0, 13) })} placeholder="09XXXXXXXX" />
+                </label>
+                <label className="block">
+                  <span className="label">رمز الدخول (PIN)</span>
+                  <Input inputMode="numeric" autoComplete="off" type="password" dir="ltr" className="text-left tracking-[0.4em]" value={form.password}
+                    onChange={(e) => setForm({ ...form, password: digits(e.target.value).slice(0, 6) })} placeholder="••••" />
+                </label>
+                <p className="text-[12px] font-bold text-ink/55">ادخل برقم تلفونك ورمز الدخول الذي يخصك.</p>
+              </>
+            ) : (
+              <label className="block">
+                <span className="label">اسم المستخدم</span>
+                <Input autoFocus autoComplete="username" autoCapitalize="none" autoCorrect="off" spellCheck={false} value={form.username}
+                  onChange={(e) => setForm({ ...form, username: e.target.value })} placeholder="admin" />
+              </label>
+            )}
 
-            <label className="block">
+            <label className={`block ${mode === 'phone' ? 'hidden' : ''}`}>
               <span className="label">كلمة المرور</span>
               <div className="relative">
                 <Input type={show ? 'text' : 'password'} autoComplete="current-password" autoCapitalize="none" autoCorrect="off" spellCheck={false}
@@ -168,6 +192,10 @@ export default function Login() {
             </p>
           )}
 
+          <button type="button" onClick={() => { setErr(''); setMode(mode === 'phone' ? 'username' : 'phone'); }}
+            className="mt-3 text-[12px] font-extrabold text-clay-600 underline underline-offset-4 hover:text-clay-800 w-full">
+            {mode === 'phone' ? 'الدخول باسم المستخدم وكلمة المرور بدلاً من ذلك' : 'الدخول برقم التلفون و PIN بدلاً من ذلك'}
+          </button>
           <button className="btn-primary mt-6 w-full" disabled={busy || !form.username || !form.password}>
             {busy
               ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white" />

@@ -20,7 +20,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const SCHEMA_PATH = path.join(__dirname, 'schema.sql');
 
 /** يرفع هذا الرقم عند أي تعديل على schema.sql كي تُطبَّق التعديلات على القواعد الموجودة */
-export const SCHEMA_VERSION = '7';
+export const SCHEMA_VERSION = '8';
 
 export const DATABASE_URL = process.env.DATABASE_URL || process.env.POSTGRES_URL || '';
 export const DRIVER = DATABASE_URL ? 'postgres' : 'pglite';
@@ -206,6 +206,9 @@ export async function migrate() {
   await db.tx(async () => {
     await db.get(`SELECT pg_advisory_xact_lock(724301)`);
     await db.exec(fs.readFileSync(SCHEMA_PATH, 'utf8'));
+    // ترقية القواعد الموجودة: عمودا التلفون للدخول برقم الهاتف و PIN
+    await db.run(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone TEXT`);
+    await db.run(`ALTER TABLE users ADD COLUMN IF NOT EXISTS phone_norm TEXT`);
     for (const [key, value] of DEFAULT_SETTINGS) {
       await db.run(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT (key) DO NOTHING`,
         key, typeof value === 'string' ? value : JSON.stringify(value));

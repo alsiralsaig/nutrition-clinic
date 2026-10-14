@@ -17,13 +17,35 @@ function recoveryCodeOk(code) {
 
 export const router = Router();
 
-const publicUser = (u) => ({ id: u.id, username: u.username, full_name: u.full_name, role: u.role, active: !!u.active, last_login_at: u.last_login_at });
+/** توحيد رقم التلفون السوداني: أرقام عربية→إنجليزية، حذف الرموز، +249/00249 → محلي 9 أرقام (يبدأ 9 أو 1) */
+export function normPhone(raw) {
+  let s = String(raw || '').trim();
+  s = s.replace(/[\u0660-\u0669]/g, (d) => String(d.charCodeAt(0) - 0x0660));
+  s = s.replace(/[\u06F0-\u06F9]/g, (d) => String(d.charCodeAt(0) - 0x06F0));
+  s = s.replace(/[\s\-().]/g, '');
+  if (s.startsWith('+')) s = s.slice(1);
+  if (s.startsWith('00249')) s = s.slice(5);
+  else if (s.startsWith('249')) s = s.slice(3);
+  if (s.startsWith('0')) s = s.slice(1);            // 0913009060 → 913009060
+  return s;
+}
+const isPhoneLike = (s) => /^9\d{8}$/.test(s) || /^1\d{8}$/.test(s);
+const PIN_RE = /^\d{4,6}$/;
+
+const publicUser = (u) => ({ id: u.id, username: u.username, full_name: u.full_name, role: u.role, active: !!u.active, last_login_at: u.last_login_at, phone: u.phone || '' });
 
 router.post('/login', wrap(async (req, res) => {
   const username = str(req.body.username, 60)?.toLowerCase();
   const password = req.body.password == null ? '' : String(req.body.password);
   if (!username || !password) throw badRequest('اسم المستخدم وكلمة المرور مطلوبان');
-  const user = await db.get(`SELECT * FROM users WHERE lower(username) = ?`, username);
+  // دخول برقم التلفون: لو الحقل أرقام تلفون → ابحث بالتلفون (PIN = نفس خانة كلمة المرور)
+  const ph = normPhone(username);
+  let user = null;
+  if (isPhoneLike(ph)) {
+    user = await db.get(`SELECT * FROM users WHERE phone_norm = ? AND active = 1`, ph);
+    if (!user) user = await db.get(`SELECT * FROM users WHERE phone = ? AND active = 1`, username.trim());
+  }
+  if (!user) user = await db.get(`SELECT * FROM users WHERE lower(username) = ?`, username);
   // لوحة مفاتيح الجوال قد تضيف مسافة في آخر الكلمة — نجرّب الكلمة كما هي ثم بدون المسافات الطرفية
   const ok = user && (checkPassword(password, user.password_hash)
     || (password.trim() !== password && password.trim() && checkPassword(password.trim(), user.password_hash)));
@@ -78,12 +100,19 @@ router.post('/users', authRequired, adminOnly(), wrap(async (req, res) => {
   const username = str(req.body.username, 60)?.toLowerCase();
   const password = req.body.password == null ? '' : String(req.body.password);
   if (!username || !/^[a-z0-9._-]{3,60}$/.test(username)) throw badRequest('اسم المستخدم: 3–60 حرفاً إنجليزياً (أرقام ونقاط وشرطة فقط)');
-  if (password.length < 8) throw badRequest('كلمة المرور يجب ألا تقل عن 8 أحرف');
+  const pin = String(req.body.pin || '').trim();
+  const phoneRaw = String(req.body.phone || '').trim();
+  const phone = phoneRaw ? normPhone(phoneRaw) : '';
+  if (phone && !isPhoneLike(phone)) throw badRequest('رقم التلفون غير صحيح — مثال: 0913009060');
+  if (pin && !PIN_RE.test(pin)) throw badRequest('رمز الدخول (PIN): من 4 إلى 6 أرقام');
+  const finalHash = pin ? hashPassword(pin) : hashPassword(password);
+  if (!pin && password.length < 8) throw badRequest('كلمة المرور يجب ألا تقل عن 8 أحرف (أو استعمل PIN من 4-6 أرقام)');
   if (await db.get(`SELECT id FROM users WHERE lower(username)=?`, username)) throw conflict('اسم المستخدم مستخدم بالفعل');
+  if (phone && await db.get(`SELECT id FROM users WHERE phone_norm=?`, phone)) throw conflict('رقم التلفون مسجل لمستخدم آخر');
   const role = ['admin', 'staff', 'viewer'].includes(req.body.role) ? req.body.role : 'staff';
   const newId = await db.insert(`
-    INSERT INTO users (username, password_hash, full_name, role, active) VALUES (?, ?, ?, ?, 1)
-  `, username, hashPassword(password), str(req.body.full_name, 120) || username, role);
+    INSERT INTO users (username, password_hash, full_name, role, active, phone, phone_norm) VALUES (?, ?, ?, ?, 1, ?, ?)
+  `, username, finalHash, str(req.body.full_name, 120) || username, role, phoneRaw || null, phone || null);
   await audit({ userId: req.user.id, action: 'user.create', entity: 'users', entityId: newId, detail: { username, role } });
   res.status(201).json(publicUser(await db.get(`SELECT * FROM users WHERE id=?`, newId)));
 }));
@@ -97,9 +126,17 @@ router.put('/users/:id(\\d+)', authRequired, adminOnly(), wrap(async (req, res) 
   if (user.id === req.user.id && (!active || role !== 'admin'))
     throw badRequest('لا يمكنك إيقاف حسابك أو تخفيض صلاحيتك');
   if (req.body.password && String(req.body.password).length < 8) throw badRequest('كلمة المرور يجب ألا تقل عن 8 أحرف');
-  await db.run(`UPDATE users SET full_name=?, role=?, active=? WHERE id=?`,
-    str(req.body.full_name, 120) || user.full_name, role, active, id);
-  if (req.body.password) {
+  const pin = String(req.body.pin || '').trim();
+  if (pin && !PIN_RE.test(pin)) throw badRequest('رمز الدخول (PIN): من 4 إلى 6 أرقام');
+  const phoneRaw = req.body.phone === undefined ? (user.phone || '') : String(req.body.phone || '').trim();
+  const phone = phoneRaw ? normPhone(phoneRaw) : '';
+  if (phone && !isPhoneLike(phone)) throw badRequest('رقم التلفون غير صحيح — مثال: 0913009060');
+  if (phone && await db.get(`SELECT id FROM users WHERE phone_norm=? AND id<>?`, phone, id)) throw conflict('رقم التلفون مسجل لمستخدم آخر');
+  await db.run(`UPDATE users SET full_name=?, role=?, active=?, phone=?, phone_norm=? WHERE id=?`,
+    str(req.body.full_name, 120) || user.full_name, role, active, phoneRaw || null, phone || null, id);
+  if (pin) {
+    await db.run(`UPDATE users SET password_hash=? WHERE id=?`, hashPassword(pin), id);
+  } else if (req.body.password) {
     await db.run(`UPDATE users SET password_hash=? WHERE id=?`, hashPassword(String(req.body.password)), id);
   }
   await audit({ userId: req.user.id, action: 'user.update', entity: 'users', entityId: id });
