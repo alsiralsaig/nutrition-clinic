@@ -172,7 +172,7 @@ function PortalLogin() {
     <div className="mx-auto flex min-h-screen max-w-md flex-col px-5 pb-8 pt-10">
       <div className="mb-6 flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-brand-600 text-[22px] text-white shadow-card">🥗</span>
+          <img src="https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/clinic-logo.png" alt="شعار العيادة" className="h-11 w-11 shrink-0 rounded-2xl bg-white object-contain p-0.5 shadow-card" />
           <div>
             <p className="text-[18px] font-extrabold">بوابتي الصحية</p>
             <p className="text-[12px] font-bold text-ink/50">خطتك · مواعيدك · عاداتك اليومية</p>

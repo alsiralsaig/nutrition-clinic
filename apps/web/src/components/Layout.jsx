@@ -59,6 +59,7 @@ function Clock() {
 export function Layout({ children }) {
   const { user, logout, busy } = useApp();
   const [clinic, setClinic] = useState('عيادة التغذية');
+  const [logo, setLogo] = useState('https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/clinic-logo.png');
   const [open, setOpen] = useState(false);
   const [todayCount, setTodayCount] = useState(null);
   const [demoMode, setDemoMode] = useState(false);
@@ -68,7 +69,10 @@ export function Layout({ children }) {
   const loc = useLocation();
 
   useEffect(() => {
-    api.get('/settings').then((r) => setClinic(r.settings?.['clinic.name'] || 'عيادة التغذية')).catch(() => {});
+    api.get('/settings').then((r) => {
+      setClinic(r.settings?.['clinic.name'] || 'عيادة التغذية');
+      if (r.settings?.['clinic.app_logo']) setLogo(r.settings['clinic.app_logo']);
+    }).catch(() => {});
     api.get(`/appointments/today?date=${todayISO()}`).then((r) => setTodayCount(r.total)).catch(() => {});
     api.get('/health').then((r) => { setDemoMode(r.mode === 'demo-ephemeral'); setEngine(r.engine); }).catch(() => {});
     if (user?.role === 'admin') api.get('/auth/me').then((r) => setDefaultPw(!!r.default_password)).catch(() => {});
@@ -88,7 +92,7 @@ export function Layout({ children }) {
       {/* الشريط الجانبي */}
       <aside className={`no-print fixed inset-y-0 start-0 z-50 flex w-[272px] flex-col gap-1 border-e border-line brand-gradient p-3.5 text-white transition-transform lg:translate-x-0 ${open ? 'translate-x-0' : 'rtl:translate-x-full ltr:-translate-x-full'} lg:sticky lg:top-0 lg:h-screen lg:translate-x-0`}>
         <div className="mb-2 flex items-center gap-3 px-1.5 py-2">
-          <span className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15 text-[22px] backdrop-blur">🥗</span>
+          <img src={logo} alt="شعار العيادة" className="h-11 w-11 shrink-0 rounded-2xl bg-white object-contain p-0.5 shadow-card" />
           <div className="min-w-0">
             <p className="truncate text-[15px] font-extrabold leading-tight">{clinic}</p>
             <p className="text-[11.5px] font-bold text-white/60">نظام إدارة العيادة</p>

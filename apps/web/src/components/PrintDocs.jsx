@@ -9,7 +9,7 @@ export function DocHeader({ clinic = {}, title, subtitle, patient }) {
     <header className="mb-5 border-b-2 border-black pb-3.5">
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <span className="grid h-12 w-12 place-items-center rounded-xl border border-black text-[22px]">🥗</span>
+          <img src="https://gzkuoczegwcszdoqisjn.supabase.co/storage/v1/object/public/bucket/clinic-logo.png" alt="شعار العيادة" className="h-12 w-12 rounded-xl border border-black object-contain" />
           <div>
             <p className="text-[16px] font-extrabold leading-tight">{clinic['clinic.name'] || 'عيادة التغذية'}</p>
             <p className="text-[11px]">{clinic['clinic.address'] || ''} · هاتف {clinic['clinic.phone'] || ''}</p>
