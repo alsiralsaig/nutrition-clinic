@@ -9,8 +9,9 @@ import { createHash, timingSafeEqual } from 'node:crypto';
 function recoveryCodeOk(code) {
   const expected = (process.env.ADMIN_RECOVERY_CODE || '').trim();
   if (!expected) throw new HttpError(501, 'رمز الاستعادة غير مضبوط — أضف ADMIN_RECOVERY_CODE في متغيرات Vercel ثم أعد النشر');
-  const a = createHash('sha256').update(String(code || '').trim()).digest();
-  const b = createHash('sha256').update(expected).digest();
+  // مقارنة متسامحة: تُهمل المسافات الطرفية وحالة الأحرف (كثير من الأجهزة تبدّلها تلقائياً)
+  const a = createHash('sha256').update(String(code || '').trim().toLowerCase()).digest();
+  const b = createHash('sha256').update(expected.toLowerCase()).digest();
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
@@ -38,7 +39,7 @@ router.post('/reset-password', wrap(async (req, res) => {
   const username = (str(req.body.username, 60) || 'admin').toLowerCase();
   if (!code || !next) throw badRequest('أدخل رمز الاستعادة وكلمة المرور الجديدة');
   if (next.length < 8) throw badRequest('كلمة المرور الجديدة يجب ألا تقل عن 8 أحرف');
-  if (!recoveryCodeOk(code)) throw new HttpError(401, 'رمز الاستعادة غير صحيح');
+  if (!recoveryCodeOk(code)) throw new HttpError(401, 'رمز الاستعادة غير صحيح — تأكد أن ADMIN_RECOVERY_CODE مضاف في مشروع Vercel لهذا الموقع (بنفس القيمة) وأنك أعدت النشر بعد إضافته');
   const user = await db.get(`SELECT * FROM users WHERE lower(username) = ?`, username);
   if (!user) throw notFound('المستخدم غير موجود');
   await db.run(`UPDATE users SET password_hash = ? WHERE id = ?`, hashPassword(next), user.id);
